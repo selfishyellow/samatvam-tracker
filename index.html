@@ -5,44 +5,60 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>Samatvam Participation · IIM Bodh Gaya</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
+/* Look: bold outlines, chunky uppercase headings, pink / yellow / blue blocks, pill buttons */
+:root{--ink:#111;--paper:#f7f5ef;--pink:#e76cf2;--yellow:#f8ef4f;--blue:#2f97f2;--green:#3ccf6e;--orange:#ff9f2e;--red:#ff5a4e;--line:3px solid var(--ink);--shadow:4px 4px 0 var(--ink)}
 *{box-sizing:border-box}
-body{margin:0;font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f4f5f2;color:#1d2118}
-header{background:#2f4214;color:#fff;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-header b{font-size:16px;margin-right:auto}
-main{max-width:980px;margin:0 auto;padding:14px}
-nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
-button{font:inherit;border:1px solid #b9c0ad;background:#fff;border-radius:6px;padding:6px 10px;cursor:pointer}
-button.main{background:#2f4214;color:#fff;border-color:#2f4214}
-button.on{background:#2f4214;color:#fff}
-button:disabled{opacity:.4;cursor:not-allowed}
-input,select{font:inherit;padding:6px 8px;border:1px solid #b9c0ad;border-radius:6px;background:#fff;max-width:100%}
-.card{background:#fff;border:1px solid #dde1d5;border-radius:8px;padding:12px;margin-bottom:12px}
+body{margin:0;font:15px/1.5 "DM Sans",system-ui,sans-serif;background:var(--paper);color:var(--ink)}
+h1,h2,h3{font-family:"Archivo Black",Impact,sans-serif;text-transform:uppercase;letter-spacing:.5px;line-height:1.1}
+h2{font-size:24px}
+header{margin:12px auto 0;max-width:980px;background:#fff;border:var(--line);border-radius:999px;padding:8px 10px 8px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;box-shadow:var(--shadow)}
+header b{font-family:"Archivo Black",sans-serif;text-transform:uppercase;font-size:15px;margin-right:auto;letter-spacing:.5px}
+header b::before{content:"✺ ";color:var(--pink)}
+main{max-width:980px;margin:0 auto;padding:18px 14px 40px}
+nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+button{font:700 14px "DM Sans",sans-serif;border:2.5px solid var(--ink);background:#fff;color:var(--ink);border-radius:999px;padding:7px 14px;cursor:pointer;transition:transform .08s,box-shadow .08s}
+button:hover{transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--ink)}
+button:active{transform:none;box-shadow:none}
+button.main{background:var(--ink);color:#fff}
+button.on{background:var(--yellow);color:var(--ink);box-shadow:3px 3px 0 var(--ink)}
+button:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
+input,select,textarea{font:inherit;padding:8px 12px;border:2.5px solid var(--ink);border-radius:14px;background:#fff;max-width:100%;color:var(--ink)}
+input:focus,select:focus,textarea:focus{outline:none;box-shadow:3px 3px 0 var(--blue)}
+.card{background:#fff;border:var(--line);border-radius:22px;padding:16px;margin-bottom:16px;box-shadow:var(--shadow)}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.dim{color:#6b7260;font-size:13px}
+.dim{color:#555;font-size:13px}
 table{width:100%;border-collapse:collapse}
-th,td{text-align:left;padding:6px;border-bottom:1px solid #eceee8;vertical-align:top}
-th{font-size:13px;color:#6b7260}
-tr.me td{background:#eef5e0;font-weight:600}
+th,td{text-align:left;padding:8px 6px;border-bottom:2px solid #e6e3da;vertical-align:middle}
+th{font:12px "Archivo Black",sans-serif;text-transform:uppercase;letter-spacing:.5px;color:var(--ink);border-bottom:var(--line)}
+tr.me td{background:var(--yellow);font-weight:700}
 .scroll{overflow-x:auto}
-.mk{min-width:44px;padding:6px 4px}
-.mk.yes.on{background:#2e7d32;border-color:#2e7d32}
-.mk.partly.on{background:#d08a00;border-color:#d08a00}
-.mk.no.on{background:#c62828;border-color:#c62828}
-.mk.exc.on{background:#3d6fa8;border-color:#3d6fa8}
-.flag{background:#fde8e6;color:#a11;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600}
-.flag.y{background:#fff1c2;color:#7a5600}
-.pill{background:#eceee8;border-radius:4px;padding:1px 6px;font-size:12px;color:#222}
-.warn{background:#fff4d6;border-color:#f0d78a}
-.bad{background:#fde8e6;border-color:#f3b3ab}
-.stat{display:inline-block;min-width:110px;margin:0 8px 8px 0}
-.stat b{display:block;font-size:22px}
-.mrow{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid #eceee8}
+.mk{min-width:48px;padding:7px 6px}
+.mk.yes.on{background:var(--green)}
+.mk.partly.on{background:var(--orange)}
+.mk.no.on{background:var(--red);color:#fff}
+.mk.exc.on{background:var(--blue);color:#fff}
+.flag{background:var(--red);color:#fff;border:2px solid var(--ink);border-radius:999px;padding:1px 8px;font-size:12px;font-weight:700}
+.flag.y{background:var(--yellow);color:var(--ink)}
+.pill{background:var(--pink);border:2px solid var(--ink);border-radius:999px;padding:1px 9px;font-size:12px;font-weight:700;color:var(--ink)}
+.warn{background:var(--yellow)}
+.bad{background:var(--pink)}
+.stat{display:inline-block;min-width:130px;margin:0 10px 10px 0;padding:12px 14px;border:var(--line);border-radius:18px;background:var(--blue);color:#fff;box-shadow:var(--shadow)}
+.stat:nth-of-type(3n+2){background:var(--yellow);color:var(--ink)}
+.stat:nth-of-type(3n+3){background:var(--pink);color:var(--ink)}
+.stat .dim{color:inherit;opacity:.85}
+.stat b{display:block;font:30px "Archivo Black",sans-serif}
+.mrow{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:10px 0;border-bottom:2px solid #e6e3da}
 .mrow:last-child{border-bottom:0}
-.gate{max-width:460px;margin:60px auto}
-.spin{width:22px;height:22px;border:3px solid #ccd3c0;border-top-color:#2f4214;border-radius:50%;animation:s .8s linear infinite;display:inline-block;vertical-align:middle;margin-right:8px}
+details.card summary{list-style:none}
+.gate{max-width:480px;margin:70px auto;text-align:center;padding:28px}
+.gate h2{font-size:30px}
+.gate button.main{font-size:16px;padding:11px 22px;background:var(--yellow);color:var(--ink);box-shadow:var(--shadow)}
+.spin{width:22px;height:22px;border:3px solid #ddd;border-top-color:var(--pink);border-radius:50%;animation:s .8s linear infinite;display:inline-block;vertical-align:middle;margin-right:8px}
 @keyframes s{to{transform:rotate(360deg)}}
-@media(max-width:600px){.hide-sm{display:none}}
+@media(max-width:600px){.hide-sm{display:none}header{margin:8px 8px 0;border-radius:24px}h2{font-size:20px}}
 </style>
 </head>
 <body>
