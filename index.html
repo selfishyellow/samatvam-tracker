@@ -55,10 +55,10 @@ import { getFirestore, doc, getDoc, getDocs, collection, onSnapshot, writeBatch,
 
 // ---- Firebase settings (safe to be public; the database rules do the protecting)
 const firebaseConfig = {
-  apiKey: "AIzaSyDovLKo3djdRbs963vqKdbj-geRWyzMTrg",
+  apiKey: "AIzaSyAOHmaOkPHzvs075HlhRv4RDF4V0qSnmak",
   authDomain: "samatvam-tracker.firebaseapp.com",
   projectId: "samatvam-tracker",
-  appId: "1:703506618799:web:b78d31c1ae570d3b5c375a",
+  appId: "1:954477611347:web:a8f2f0aee306e9411ef9a6",
 };
 const FIRST_ADMIN = "neham.r2028@iimbg.ac.in";
 
@@ -71,15 +71,8 @@ const RES = {
   no:     { label: "Absent",   short: "−1",   score: -1,   reason: false },
   exc:    { label: "Excused",  short: "0",    score: 0,    reason: true },
 };
-const ROSTER = {
-  "MBA 12": ["Neham Raj","Princi","Amilthini","Anurag Prasoon","Arihant","Bhavya Vijay","Chaitanya Garg","Jitendra Soni","Palak","Riya","Samiksha","Shreyansh","Suzal Negi","Yuvraj"],
-  "MBA 11": ["Abhiroop","Amrish","Diya Gosar","Mayank","Pritam","Priyanshu","Srijan","Aman Kumar","Gaurav Singh","Nehal Agrawal","Shivi Nagla","Shruti Gupta","Unsaved +91 94754 54828"],
-  "IPM 06": ["Prathvi Jindal","Jvalit Buch","Pranav","Adhyan","Tanya","Akshit","Alok","Shashank","Shubhi Bam","Unsaved +91 70006 13125"],
-  "IPM 05": ["Jayam","Garvit Anand","Pragya","Aashii","Aditi","Aishvin Kainth","Aman Gaikwad","Ashlesha Shahi","Bani","Chhavi Singh","Harshita Bisht","Kaushikee","Muskan Goswami","Pihu","Shreya","Vatsal Gupta","Unsaved +91 85474 50109","Unsaved +91 62971 68595","Unsaved +91 89598 82752","Unsaved +91 93150 71399"],
-  "Faculty": ["Sweta","Aditi","Dr. Palakshi","Anoop","Counselor (name to add)"],
-};
-const START_POCS = ["Abhiroop", "Mayank", "Diya Gosar", "Neham Raj", "Chaitanya Garg", "Pragya", "Jayam"];
-const KNOWN_EMAILS = { "Neham Raj": FIRST_ADMIN };
+// The member list is NOT stored in this public file. A PoC pastes it once on the Members page,
+// and it goes straight into the private database.
 
 // ---------------------------------------------------------------- helpers
 const $ = (id) => document.getElementById(id);
@@ -313,8 +306,9 @@ function summaryScreen() {
 }
 
 function membersScreen() {
-  if (!D.members.length) return `<div class="card"><h3 style="margin-top:0">Set up the member list</h3><div class="dim">This adds the 62 people from the Samatvam list (57 members and 5 faculty), with the 7 PoCs and your email already set.</div>
-    <div style="margin-top:8px"><button class="main" data-a="seed">Load the starting member list</button></div></div>`;
+  if (!D.members.length) return `<div class="card"><h3 style="margin-top:0">Set up the member list</h3><div class="dim">Paste one person per line: <b>Name, Batch, Role, Email</b>. Batch is MBA 11, MBA 12, IPM 05, IPM 06 or Faculty. Role is member, poc or faculty. Email is optional.</div>
+    <textarea id="seed-text" rows="12" style="width:100%;margin-top:8px;font:13px monospace" placeholder="Neham Raj, MBA 12, poc, neham.r2028@iimbg.ac.in&#10;Riya, MBA 12, member"></textarea>
+    <div style="margin-top:8px"><button class="main" data-a="seed">Load the member list</button></div></div>`;
   const list = D.members.filter((m) => S.batch === "all" || m.batch === S.batch).sort((a, b) => BATCHES.indexOf(a.batch) - BATCHES.indexOf(b.batch) || a.name.localeCompare(b.name));
   const opts = (sel, arr) => arr.map((x) => `<option value="${x}" ${sel === x ? "selected" : ""}>${ROLES[x] || x}</option>`).join("");
   return `<div class="card"><b>Add a person</b><div class="row" style="margin-top:6px">
@@ -412,14 +406,16 @@ const A = {
   stopPreview: () => { S.viewAs = ""; S.tab = "members"; render(); },
   seed: () => run(async () => {
     if (D.members.length) return;
+    const rows = $("seed-text").value.split("\n").map((l) => l.split(",").map((x) => x.trim())).filter((r) => r[0]);
+    const bad = rows.filter((r) => !BATCHES.includes(r[1]) || !ROLES[(r[2] || "member").toLowerCase()] || (r[3] && !okEmail(r[3])));
+    if (!rows.length) return toast("Paste the member list first.");
+    if (bad.length) return toast("Please fix these lines:\n" + bad.map((r) => r.join(", ")).join("\n"));
     const b = writeBatch(db);
-    for (const [batch, names] of Object.entries(ROSTER)) for (const name of names) {
-      const role = batch === "Faculty" ? "faculty" : START_POCS.includes(name) ? "poc" : "member";
-      writeMember(b, { id: rnd("m"), name, batch, email: KNOWN_EMAILS[name] || "", role }, null);
-    }
+    for (const [name, batch, role, email] of rows)
+      writeMember(b, { id: rnd("m"), name, batch, email: (email || "").toLowerCase(), role: batch === "Faculty" ? "faculty" : (role || "member").toLowerCase() }, null);
     b.set(doc(db, "config", "settings"), { yellowAt: 3, redAt: 4 });
     await b.commit();
-    await addLog({ note: "Loaded the starting member list (62 people)" });
+    await addLog({ note: `Loaded the member list (${rows.length} people)` });
     location.reload();
   }),
   newEvent: () => run(async () => {
