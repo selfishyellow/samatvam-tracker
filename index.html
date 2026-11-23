@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Samatvam Participation · IIM Bodh Gaya</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f4f5f2;color:#1d2118}
+header{background:#2f4214;color:#fff;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+header b{font-size:16px;margin-right:auto}
+main{max-width:980px;margin:0 auto;padding:14px}
+nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+button{font:inherit;border:1px solid #b9c0ad;background:#fff;border-radius:6px;padding:6px 10px;cursor:pointer}
+button.main{background:#2f4214;color:#fff;border-color:#2f4214}
+button.on{background:#2f4214;color:#fff}
+button:disabled{opacity:.4;cursor:not-allowed}
+input,select{font:inherit;padding:6px 8px;border:1px solid #b9c0ad;border-radius:6px;background:#fff;max-width:100%}
+.card{background:#fff;border:1px solid #dde1d5;border-radius:8px;padding:12px;margin-bottom:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.dim{color:#6b7260;font-size:13px}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:6px;border-bottom:1px solid #eceee8;vertical-align:top}
+th{font-size:13px;color:#6b7260}
+tr.me td{background:#eef5e0;font-weight:600}
+.scroll{overflow-x:auto}
+.mk{min-width:44px;padding:6px 4px}
+.mk.yes.on{background:#2e7d32;border-color:#2e7d32}
+.mk.partly.on{background:#d08a00;border-color:#d08a00}
+.mk.no.on{background:#c62828;border-color:#c62828}
+.mk.exc.on{background:#3d6fa8;border-color:#3d6fa8}
+.flag{background:#fde8e6;color:#a11;border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600}
+.flag.y{background:#fff1c2;color:#7a5600}
+.pill{background:#eceee8;border-radius:4px;padding:1px 6px;font-size:12px;color:#222}
+.warn{background:#fff4d6;border-color:#f0d78a}
+.bad{background:#fde8e6;border-color:#f3b3ab}
+.stat{display:inline-block;min-width:110px;margin:0 8px 8px 0}
+.stat b{display:block;font-size:22px}
+.mrow{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid #eceee8}
+.mrow:last-child{border-bottom:0}
+.gate{max-width:460px;margin:60px auto}
+.spin{width:22px;height:22px;border:3px solid #ccd3c0;border-top-color:#2f4214;border-radius:50%;animation:s .8s linear infinite;display:inline-block;vertical-align:middle;margin-right:8px}
+@keyframes s{to{transform:rotate(360deg)}}
+@media(max-width:600px){.hide-sm{display:none}}
+</style>
+</head>
+<body>
+<div id="app"><div class="card gate"><span class="spin"></span>Loading…</div></div>
+<script type="module">
+// ===================== Samatvam Participation Tracker (live) =====================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut as fbSignOut } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, getDocs, collection, onSnapshot, writeBatch, updateDoc, setDoc, deleteDoc, serverTimestamp, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js";
+
+// ---- Firebase settings (safe to be public; the database rules do the protecting)
+const firebaseConfig = {
+  apiKey: "AIzaSyDovLKo3djdRbs963vqKdbj-geRWyzMTrg",
+  authDomain: "samatvam-tracker.firebaseapp.com",
+  projectId: "samatvam-tracker",
+  appId: "1:703506618799:web:b78d31c1ae570d3b5c375a",
+};
+const FIRST_ADMIN = "neham.r2028@iimbg.ac.in";
+
+const PART = ["MBA 11", "MBA 12", "IPM 05", "IPM 06"];
+const BATCHES = [...PART, "Faculty"];
+const ROLES = { member: "Member", poc: "PoC", faculty: "Faculty" };
+const RES = {
+  yes:    { label: "Present",  short: "+1",   score: 1,    reason: false },
+  partly: { label: "Slacking", short: "−0.5", score: -0.5, reason: true },
+  no:     { label: "Absent",   short: "−1",   score: -1,   reason: false },
+  exc:    { label: "Excused",  short: "0",    score: 0,    reason: true },
+};
+const ROSTER = {
+  "MBA 12": ["Neham Raj","Princi","Amilthini","Anurag Prasoon","Arihant","Bhavya Vijay","Chaitanya Garg","Jitendra Soni","Palak","Riya","Samiksha","Shreyansh","Suzal Negi","Yuvraj"],
+  "MBA 11": ["Abhiroop","Amrish","Diya Gosar","Mayank","Pritam","Priyanshu","Srijan","Aman Kumar","Gaurav Singh","Nehal Agrawal","Shivi Nagla","Shruti Gupta","Unsaved +91 94754 54828"],
+  "IPM 06": ["Prathvi Jindal","Jvalit Buch","Pranav","Adhyan","Tanya","Akshit","Alok","Shashank","Shubhi Bam","Unsaved +91 70006 13125"],
+  "IPM 05": ["Jayam","Garvit Anand","Pragya","Aashii","Aditi","Aishvin Kainth","Aman Gaikwad","Ashlesha Shahi","Bani","Chhavi Singh","Harshita Bisht","Kaushikee","Muskan Goswami","Pihu","Shreya","Vatsal Gupta","Unsaved +91 85474 50109","Unsaved +91 62971 68595","Unsaved +91 89598 82752","Unsaved +91 93150 71399"],
+  "Faculty": ["Sweta","Aditi","Dr. Palakshi","Anoop","Counselor (name to add)"],
+};
+const START_POCS = ["Abhiroop", "Mayank", "Diya Gosar", "Neham Raj", "Chaitanya Garg", "Pragya", "Jayam"];
+const KNOWN_EMAILS = { "Neham Raj": FIRST_ADMIN };
+
+// ---------------------------------------------------------------- helpers
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const rnd = (p) => p + Math.random().toString(36).slice(2, 10);
+const pts = (n) => (n > 0 ? "+" + n : n < 0 ? "−" + Math.abs(n) : "0");
+const ms = (v) => (v && typeof v.toMillis === "function" ? v.toMillis() : typeof v === "number" ? v : Date.now());
+const when = (t) => new Date(ms(t)).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+const okEmail = (e) => /^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(e);
+function friendly(e) {
+  const c = e?.code || "";
+  if (c.includes("permission-denied")) return "Not allowed. Your account doesn't have permission to do this.";
+  if (c.includes("unavailable")) return "You seem to be offline. Check your internet and try again.";
+  if (c === "auth/unauthorized-domain") return "This website address isn't allowed for Google sign-in yet (Firebase → Authentication → Settings → Authorized domains).";
+  return e?.message || String(e);
+}
+function toast(msg) { alert(msg); }
+
+const configured = !Object.values(firebaseConfig).some((v) => String(v).includes("PASTE"));
+const fb = configured ? initializeApp(firebaseConfig) : null;
+const auth = fb ? getAuth(fb) : null;
+const db = fb ? getFirestore(fb) : null;
+const google = new GoogleAuthProvider();
+google.setCustomParameters({ prompt: "select_account" });
+
+// ---------------------------------------------------------------- state
+const S = { phase: configured ? "loading" : "unconfigured", reason: "", email: "", myName: "", acc: null,
+  tab: "", ev: "", sub: "", q: "", batch: "all", subsOpen: false, viewAs: "", log: null };
+const D = { members: [], events: [], sheets: {}, settings: { yellowAt: 3, redAt: 4 } };
+let unsub = [];
+const stopAll = () => { unsub.forEach((u) => u()); unsub = []; };
+
+const isStaff = () => S.email === FIRST_ADMIN || ["poc", "faculty"].includes(S.acc?.role);
+const myMid = () => S.acc?.mid || "";
+const byId = (id) => D.members.find((m) => m.id === id);
+// Whose screen we show: yourself, or the member a PoC is previewing.
+const viewer = () => (S.viewAs ? byId(S.viewAs) : byId(myMid()));
+const staffView = () => isStaff() && !S.viewAs;
+const isFaculty = () => S.acc?.role === "faculty";
+
+// ---------------------------------------------------------------- numbers
+const units = (e) => (e.subs && e.subs.length ? e.subs : [{ id: e.id, name: "" }]);
+const markOf = (unitId, mid) => D.sheets[unitId]?.marks?.[mid] || null;
+const participants = () => D.members.filter((m) => m.batch !== "Faculty");
+const membersOf = (e) => D.members.filter((m) => e.batches.includes(m.batch));
+
+// Points: every mark counts. "Absent in a row": each event counts once (present if they came to any sub-event).
+function stats(mid) {
+  const s = { yes: 0, partly: 0, no: 0, exc: 0, points: 0, events: 0, came: 0, absEv: 0, streak: 0, longest: 0 };
+  const evs = [...D.events].sort((a, b) => (a.date || "").localeCompare(b.date || "") || ms(a.at) - ms(b.at));
+  for (const e of evs) {
+    const rs = units(e).map((u) => markOf(u.id, mid)).filter(Boolean);
+    if (!rs.length) continue;
+    for (const r of rs) { s[r.v]++; s.points += RES[r.v].score; }
+    s.events++;
+    const came = rs.some((r) => r.v === "yes" || r.v === "partly"), absent = !came && rs.some((r) => r.v === "no");
+    if (came) { s.came++; s.streak = 0; }
+    else if (absent) { s.absEv++; s.streak++; s.longest = Math.max(s.longest, s.streak); }
+  }
+  s.level = s.streak >= D.settings.redAt ? "red" : s.streak >= D.settings.yellowAt ? "yellow" : "";
+  return s;
+}
+const flagTag = (s) => s.level === "red" ? `<span class="flag">🔴 ${s.streak} absent in a row</span>` : s.level === "yellow" ? `<span class="flag y">🟡 ${s.streak} absent in a row</span>` : "";
+
+// ---------------------------------------------------------------- sign-in
+if (configured) {
+  getRedirectResult(auth).catch((e) => toast(friendly(e)));
+  onAuthStateChanged(auth, (u) => { stopAll(); S.acc = null; S.viewAs = ""; if (!u) { S.phase = "signin"; render(); return; } checkAccess(u); });
+} else render();
+
+async function checkAccess(u) {
+  S.phase = "loading"; render();
+  S.email = (u.email || "").toLowerCase(); S.myName = u.displayName || S.email;
+  try {
+    const a = await getDoc(doc(db, "access", S.email));
+    S.acc = a.exists() ? a.data() : null;
+    if (!S.acc && S.email !== FIRST_ADMIN) { S.phase = "denied"; render(); return; }
+    S.tab = isFaculty() ? "overview" : isStaff() ? "events" : "mine";
+    listen();
+  } catch (e) { S.phase = "error"; S.reason = friendly(e); render(); }
+}
+async function signIn() {
+  try { await signInWithPopup(auth, google); }
+  catch (e) {
+    if (e?.code === "auth/popup-blocked" || e?.code === "auth/operation-not-supported-in-this-environment") return signInWithRedirect(auth, google);
+    if (e?.code === "auth/popup-closed-by-user" || e?.code === "auth/cancelled-popup-request") return;
+    toast(friendly(e));
+  }
+}
+
+let scheduled = false;
+const schedule = () => { if (scheduled) return; scheduled = true; requestAnimationFrame(() => { scheduled = false; render(); }); };
+function listen() {
+  const wait = new Set(["members", "events", "sheets", "config"]);
+  const done = (k) => { wait.delete(k); if (!wait.size) S.phase = "ready"; schedule(); };
+  const fail = (e) => { S.phase = "error"; S.reason = friendly(e); render(); };
+  unsub.push(onSnapshot(collection(db, "members"), (q) => { D.members = q.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => a.name.localeCompare(b.name)); done("members"); }, fail));
+  unsub.push(onSnapshot(collection(db, "events"), (q) => { D.events = q.docs.map((d) => ({ ...d.data({ serverTimestamps: "estimate" }), id: d.id })); done("events"); }, fail));
+  unsub.push(onSnapshot(collection(db, "sheets"), (q) => { D.sheets = Object.fromEntries(q.docs.map((d) => [d.id, d.data({ serverTimestamps: "estimate" })])); done("sheets"); }, fail));
+  unsub.push(onSnapshot(doc(db, "config", "settings"), (d) => { if (d.exists()) D.settings = { yellowAt: 3, redAt: 4, ...d.data() }; done("config"); }, fail));
+  // Notice straight away if this person's access is changed.
+  unsub.push(onSnapshot(doc(db, "access", S.email), (d) => {
+    const n = d.exists() ? d.data() : null;
+    if (!n && S.email !== FIRST_ADMIN) { stopAll(); S.phase = "denied"; render(); return; }
+    if ((n?.role || "") !== (S.acc?.role || "") && S.acc) { location.reload(); return; }
+    S.acc = n; schedule();
+  }, () => undefined));
+}
+
+async function addLog(entry) {
+  await setDoc(doc(collection(db, "log")), { ...entry, by: S.email, byName: viewerName(), at: serverTimestamp() });
+}
+const viewerName = () => byId(myMid())?.name || S.myName;
+
+// ---------------------------------------------------------------- screens
+function gate(inner) { return `<div class="card gate">${inner}</div>`; }
+function gateScreen() {
+  switch (S.phase) {
+    case "unconfigured": return gate(`<h2>Almost ready</h2><div class="dim">Firebase settings haven't been added to this page yet.</div>`);
+    case "loading": return gate(`<span class="spin"></span>Loading…`);
+    case "signin": return gate(`<h2 style="margin-top:0">Samatvam · Participation</h2><div class="dim" style="margin-bottom:12px">IIM Bodh Gaya. Sign in with the Google account Samatvam has on file for you.</div>
+      <button class="main" data-a="signin">Sign in with Google</button>
+      <div class="dim" style="margin-top:12px">Opened this link inside WhatsApp or Instagram? Open it in Chrome or Safari instead. Google doesn't allow sign-in inside those apps.</div>`);
+    case "denied": return gate(`<h2 style="margin-top:0">Can't let you in</h2><div>Signed in as <b>${esc(S.email)}</b>.</div><div class="dim" style="margin:8px 0">This email isn't on the Samatvam list. Ask a PoC to add it next to your name.</div><button data-a="signout">Use a different Google account</button>`);
+    case "error": return gate(`<h2 style="margin-top:0">Something went wrong</h2><div class="card bad">${esc(S.reason)}</div><button class="main" data-a="reload">Try again</button> <button data-a="signout">Sign out</button>`);
+  }
+  return "";
+}
+
+function layout(body) {
+  const v = viewer();
+  const roleName = S.viewAs ? "Preview" : ROLES[S.acc?.role] || "PoC";
+  let tabs;
+  if (staffView()) {
+    tabs = [["overview", "Overview"], ["events", "Mark attendance"], ["ranking", "Ranking"], ["summary", "Everyone"], ["members", "Members"], ["log", "History"]];
+    if (byId(myMid()) && !isFaculty()) tabs.push(["mine", "My record"]);
+  } else tabs = [["mine", "My record"], ["ranking", "Ranking"]];
+  return `<header><b>Samatvam · Participation</b><span>${esc(v?.name || S.myName)} <span class="pill">${roleName}</span></span><button data-a="signout">Sign out</button></header>
+  ${S.viewAs ? `<div style="background:#fff4d6;padding:8px 14px" class="row"><b>Preview:</b> this is what ${esc(v?.name)} sees. <button data-a="stopPreview">Stop preview</button></div>` : ""}
+  <main><nav>${tabs.map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" data-a="tab" data-k="${k}">${l}</button>`).join("")}</nav>${body}</main>`;
+}
+
+function overviewScreen() {
+  const all = participants().map((m) => ({ m, s: stats(m.id) }));
+  const top = all.filter((x) => x.s.absEv > 0).sort((a, b) => b.s.absEv - a.s.absEv || b.s.streak - a.s.streak || a.m.name.localeCompare(b.m.name)).slice(0, 5);
+  const red = all.filter((x) => x.s.level === "red"), yel = all.filter((x) => x.s.level === "yellow");
+  return `${red.length ? `<div class="card bad"><b>🔴 Red flag (${red.length})</b> · absent in ${D.settings.redAt}+ events in a row: ${red.map((x) => esc(x.m.name)).join(", ")}</div>` : ""}
+  ${yel.length ? `<div class="card warn"><b>🟡 Warning (${yel.length})</b> · absent in ${D.settings.yellowAt} events in a row: ${yel.map((x) => esc(x.m.name)).join(", ")}</div>` : ""}
+  <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Most absences · top 5</h2><button class="main" data-a="tab" data-k="events">Mark attendance →</button></div>
+    <div class="dim" style="margin:4px 0 8px">${D.events.length} events so far · ${participants().length} members</div>
+    ${top.length ? `<div class="scroll"><table><tr><th>#</th><th>Name</th><th>Batch</th><th>Absent</th><th>In a row now</th><th>Excused</th><th>Points</th></tr>
+    ${top.map(({ m, s }, i) => `<tr><td>${i + 1}</td><td><b>${esc(m.name)}</b></td><td>${m.batch}</td><td><b style="font-size:18px">${s.absEv}</b> of ${s.events} events</td><td>${s.streak} ${flagTag(s)}</td><td>${s.exc}</td><td>${pts(s.points)}</td></tr>`).join("")}</table></div>`
+    : `<div class="dim">Nobody has missed an event yet.</div>`}
+    <div style="margin-top:8px"><button data-a="tab" data-k="summary">See everyone →</button></div></div>`;
+}
+
+function batchButtons(list) {
+  return `<button class="${S.batch === "all" ? "on" : ""}" data-a="batch" data-k="all">All</button>${list.map((b) => `<button class="${S.batch === b ? "on" : ""}" data-a="batch" data-k="${b}">${b}</button>`).join("")}`;
+}
+
+// Everyone can see the ranking: points, then fewer absences.
+function rankingScreen() {
+  const me = viewer()?.id;
+  const rows = participants().map((m) => ({ m, s: stats(m.id) }))
+    .sort((a, b) => b.s.points - a.s.points || a.s.absEv - b.s.absEv || a.m.name.localeCompare(b.m.name));
+  let rank = 0, prev = null;
+  rows.forEach((r, i) => { const key = r.s.points + "|" + r.s.absEv; if (key !== prev) { rank = i + 1; prev = key; } r.rank = rank; });
+  const shown = rows.filter(({ m }) => S.batch === "all" || m.batch === S.batch);
+  const mine = rows.find((r) => r.m.id === me);
+  return `${mine ? `<div class="card"><span class="stat"><span class="dim">Your rank</span><b>#${mine.rank}</b><span class="dim">of ${rows.length}</span></span><span class="stat"><span class="dim">Your points</span><b>${pts(mine.s.points)}</b></span></div>` : ""}
+  <div class="card"><div class="row" style="margin-bottom:8px">${batchButtons(PART)}</div>
+  <div class="scroll"><table><tr><th>Rank</th><th>Name</th><th>Batch</th><th>Points</th><th>Came to</th></tr>
+  ${shown.map(({ m, s, rank }) => `<tr class="${m.id === me ? "me" : ""}"><td>${rank <= 3 && s.points > 0 ? ["🥇", "🥈", "🥉"][rank - 1] : "#" + rank}</td><td>${esc(m.name)}${m.id === me ? " (you)" : ""}</td><td>${m.batch}</td><td><b>${pts(s.points)}</b></td><td>${s.came} of ${s.events} events</td></tr>`).join("")}
+  </table></div><div class="dim" style="margin-top:6px">Ranked by points. Equal points: fewer absences ranks higher.</div></div>`;
+}
+
+function eventsScreen() {
+  const list = [...D.events].sort((a, b) => (b.date || "").localeCompare(a.date || "") || ms(b.at) - ms(a.at));
+  return `<div class="card"><b>New event</b>
+    <div class="row" style="margin-top:6px"><input id="ev-name" placeholder="Event name" style="flex:1;min-width:180px"><input id="ev-date" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
+    <div class="row" style="margin-top:6px"><span class="dim">Who takes part:</span>${PART.map((b) => `<label><input type="checkbox" name="evb" value="${b}" checked> ${b}</label>`).join("")}</div>
+    <div style="margin-top:8px"><button class="main" data-a="newEvent">Create event</button></div></div>
+  ${list.length ? list.map((e) => {
+    const ms_ = membersOf(e);
+    const prog = units(e).map((u) => `${u.name ? esc(u.name) + ": " : ""}${ms_.filter((m) => markOf(u.id, m.id)).length} of ${ms_.length} marked`).join(" · ");
+    return `<div class="card row" style="justify-content:space-between"><div><b>${esc(e.name)}</b>${e.subs?.length ? ` <span class="pill">${e.subs.length} sub-events</span>` : ""}<div class="dim">${esc(e.date)} · ${e.batches.join(", ")}</div><div class="dim">${prog}</div></div>
+      <div class="row"><button class="main" data-a="open" data-id="${e.id}">Mark</button><button data-a="delEvent" data-id="${e.id}">Delete</button></div></div>`;
+  }).join("") : `<div class="card dim">No events yet. Create the first one above.</div>`}`;
+}
+
+const curUnit = (e) => { const u = units(e); return u.find((x) => x.id === S.sub) || u[0]; };
+function markScreen() {
+  const e = D.events.find((x) => x.id === S.ev);
+  if (!e) { S.ev = ""; return eventsScreen(); }
+  const u = curUnit(e), subs = e.subs || [];
+  const q = S.q.toLowerCase();
+  const list = membersOf(e).filter((m) => (S.batch === "all" || m.batch === S.batch) && (!q || m.name.toLowerCase().includes(q)));
+  const c = { yes: 0, partly: 0, no: 0, exc: 0 };
+  membersOf(e).forEach((m) => { const r = markOf(u.id, m.id); if (r) c[r.v]++; });
+  return `<button data-a="back">← All events</button>
+  <h2 style="margin:10px 0 2px">${esc(e.name)}</h2><div class="dim">${esc(e.date)}</div>
+  <details class="card" style="margin-top:10px" ${S.subsOpen ? "open" : ""}><summary data-a="subsToggle" style="cursor:pointer"><b>Sub-events (${subs.length})</b> <span class="dim">· add, rename or delete</span></summary>
+    ${subs.map((x) => `<div class="row" style="margin-top:6px"><input value="${esc(x.name)}" data-sub="${x.id}" style="flex:1;min-width:160px"><button data-a="delSub" data-id="${x.id}">Delete</button></div>`).join("")}
+    <div class="row" style="margin-top:6px"><input id="sub-name" placeholder="New sub-event, e.g. Yoga session" style="flex:1;min-width:160px"><button class="main" data-a="addSub">Add sub-event</button></div>
+    <div class="dim" style="margin-top:4px">Each sub-event is marked separately and gives its own points. For "absent in a row", the whole event counts once: anyone who came to any sub-event counts as present.</div></details>
+  ${subs.length ? `<nav>${subs.map((x) => `<button class="${x.id === u.id ? "on" : ""}" data-a="pickSub" data-id="${x.id}">${esc(x.name)}</button>`).join("")}</nav>` : ""}
+  <div class="dim">${u.name ? "<b>" + esc(u.name) + "</b> · " : ""}+1: ${c.yes} · −0.5: ${c.partly} · −1: ${c.no} · Excused: ${c.exc}</div>
+  <div class="card" style="margin-top:10px">
+    <div class="row"><input id="q" placeholder="Search name" value="${esc(S.q)}" style="flex:1;min-width:160px">${batchButtons(e.batches)}
+      <button data-a="allYes" data-id="${e.id}">+1 for all unmarked</button></div>
+    ${list.map((m) => {
+      const r = markOf(u.id, m.id), self = m.id === myMid(), st = stats(m.id);
+      return `<div class="mrow"><div><b>${esc(m.name)}</b> <span class="dim">${m.batch}</span> ${flagTag(st)}
+          ${r ? `<div class="dim">${RES[r.v].short} ${RES[r.v].label} · by ${esc(r.byName)} · ${when(r.at)}${r.reason ? ` · “${esc(r.reason)}”` : ""}</div>` : `<div class="dim">Not marked yet</div>`}</div>
+        <div class="row">${self ? `<span class="dim">You can't mark yourself</span>` : Object.entries(RES).map(([k, x]) => `<button class="mk ${k} ${r?.v === k ? "on" : ""}" data-a="mark" data-m="${m.id}" data-v="${k}">${k === "exc" ? "Exc 0" : x.short}</button>`).join("")}</div></div>`;
+    }).join("") || `<div class="dim" style="padding:8px 0">Nobody matches.</div>`}
+  </div>`;
+}
+
+function summaryScreen() {
+  const rank = { red: 2, yellow: 1, "": 0 };
+  const rows = participants().map((m) => ({ m, s: stats(m.id) })).filter(({ m }) => S.batch === "all" || m.batch === S.batch)
+    .sort((a, b) => (rank[b.s.level] - rank[a.s.level]) || (b.s.streak - a.s.streak) || (a.s.points - b.s.points) || a.m.name.localeCompare(b.m.name));
+  return `<div class="card"><div class="row"><b>Absent in a row:</b> 🟡 warning at <input id="yellowAt" type="number" min="1" value="${D.settings.yellowAt}" style="width:60px">
+      🔴 red flag at <input id="redAt" type="number" min="1" value="${D.settings.redAt}" style="width:60px"> <button data-a="setFlag">Save</button></div>
+    <div class="dim" style="margin-top:4px">Excused events don't count either way. Coming to an event (+1 or −0.5) resets the count.</div></div>
+  <div class="card"><div class="row" style="margin-bottom:8px">${batchButtons(PART)}<button data-a="csv" style="margin-left:auto">Download CSV</button></div>
+  <div class="scroll"><table><tr><th>Name</th><th>Batch</th><th>Points</th><th>+1</th><th>−0.5</th><th>−1</th><th>Exc</th><th>Events</th><th>Absent events</th><th>Longest run</th></tr>
+  ${rows.map(({ m, s }) => `<tr><td>${esc(m.name)} ${flagTag(s)}</td><td>${m.batch}</td><td><b>${pts(s.points)}</b></td><td>${s.yes}</td><td>${s.partly}</td><td>${s.no}</td><td>${s.exc}</td><td>${s.events}</td><td>${s.absEv}</td><td>${s.longest}</td></tr>`).join("")}
+  </table></div></div>`;
+}
+
+function membersScreen() {
+  if (!D.members.length) return `<div class="card"><h3 style="margin-top:0">Set up the member list</h3><div class="dim">This adds the 62 people from the Samatvam list (57 members and 5 faculty), with the 7 PoCs and your email already set.</div>
+    <div style="margin-top:8px"><button class="main" data-a="seed">Load the starting member list</button></div></div>`;
+  const list = D.members.filter((m) => S.batch === "all" || m.batch === S.batch).sort((a, b) => BATCHES.indexOf(a.batch) - BATCHES.indexOf(b.batch) || a.name.localeCompare(b.name));
+  const opts = (sel, arr) => arr.map((x) => `<option value="${x}" ${sel === x ? "selected" : ""}>${ROLES[x] || x}</option>`).join("");
+  return `<div class="card"><b>Add a person</b><div class="row" style="margin-top:6px">
+    <input id="nm-name" placeholder="Name"><select id="nm-batch">${opts("MBA 12", BATCHES)}</select>
+    <input id="nm-email" placeholder="email@iimbg.ac.in" style="min-width:200px"><select id="nm-role">${opts("member", Object.keys(ROLES))}</select>
+    <button class="main" data-a="addMember">Add</button></div></div>
+  <div class="card"><div class="row" style="margin-bottom:8px">${batchButtons(BATCHES)}</div>
+  <div class="dim" style="margin-bottom:6px">Change a box and click outside it to save. A person can sign in once their Google email is filled in. <b>PoC</b> and <b>Faculty</b> can mark; members see their own record and the ranking.</div>
+  <div class="scroll"><table><tr><th>Name</th><th>Batch</th><th>Google email (for sign-in)</th><th>Role</th><th></th></tr>
+  ${list.map((m) => { const self = m.id === myMid(); return `<tr><td><input value="${esc(m.name)}" data-f="name" data-m="${m.id}"></td>
+    <td><select data-f="batch" data-m="${m.id}">${opts(m.batch, BATCHES)}</select></td>
+    <td><input value="${esc(m.email || "")}" data-f="email" data-m="${m.id}" placeholder="not set" style="min-width:210px" ${self ? "disabled" : ""}></td>
+    <td><select data-f="role" data-m="${m.id}" ${self ? "disabled" : ""}>${opts(m.role, Object.keys(ROLES))}</select></td>
+    <td class="row">${m.role === "member" || m.role === "poc" ? `<button data-a="preview" data-m="${m.id}" title="See the site as this person">View as</button>` : ""}${self ? "" : `<button data-a="delMember" data-m="${m.id}">Remove</button>`}</td></tr>`; }).join("")}
+  </table></div></div>`;
+}
+
+function logScreen() {
+  if (S.log === null) { loadLog(); return `<div class="card"><span class="spin"></span>Loading history…</div>`; }
+  const nm = (k) => (k ? RES[k].short : "—");
+  const evName = (h) => { const e = D.events.find((x) => x.id === h.eid); const s = e?.subs?.find((x) => x.id === h.sub); return esc(e?.name || h.evName || "(deleted event)") + (s ? " · " + esc(s.name) : h.subName ? " · " + esc(h.subName) : ""); };
+  return `<div class="card"><div class="row" style="justify-content:space-between"><b>Every change, newest first</b><button data-a="reloadLog">Refresh</button></div>
+  <div class="scroll"><table><tr><th>When</th><th>By</th><th>Member</th><th class="hide-sm">Event</th><th>Change</th><th class="hide-sm">Reason</th></tr>
+  ${S.log.map((h) => h.note
+    ? `<tr><td class="dim">${when(h.at)}</td><td>${esc(h.byName)}</td><td colspan="4"><i>${esc(h.note)}</i></td></tr>`
+    : `<tr><td class="dim">${when(h.at)}</td><td>${esc(h.byName)}</td><td>${esc(byId(h.mid)?.name || h.midName || "?")}</td><td class="hide-sm">${evName(h)}</td><td>${nm(h.from)} → <b>${nm(h.to)}</b></td><td class="hide-sm dim">${esc(h.reason)}</td></tr>`).join("") || `<tr><td colspan="6" class="dim">No changes yet.</td></tr>`}
+  </table></div><div class="dim">Showing the latest 300. Nobody can edit or delete this history.</div></div>`;
+}
+async function loadLog() {
+  try { const q = await getDocs(query(collection(db, "log"), orderBy("at", "desc"), limit(300))); S.log = q.docs.map((d) => d.data({ serverTimestamps: "estimate" })); }
+  catch (e) { S.log = []; toast(friendly(e)); }
+  render();
+}
+
+function mineScreen() {
+  const m = viewer();
+  if (!m) return `<div class="card dim">Your name isn't linked yet. Ask a PoC to put your email next to your name.</div>`;
+  const s = stats(m.id);
+  const rows = D.events.flatMap((e) => units(e).map((u) => ({ e, u, r: markOf(u.id, m.id) }))).filter((x) => x.r).sort((a, b) => (b.e.date || "").localeCompare(a.e.date || ""));
+  const col = { yes: "#2e7d32", partly: "#d08a00", no: "#c62828", exc: "#3d6fa8" };
+  return `<h2 style="margin-top:0">${esc(m.name)} <span class="dim">${m.batch}</span></h2>
+  ${s.level ? `<div class="card ${s.level === "red" ? "bad" : "warn"}"><b>${s.level === "red" ? "🔴" : "🟡"} You've missed ${s.streak} events in a row.</b> Please speak to a Samatvam PoC.</div>` : ""}
+  <div class="card"><span class="stat"><span class="dim">Points</span><b>${pts(s.points)}</b><span class="dim">from ${s.events} events</span></span>
+    <span class="stat"><span class="dim">Present +1</span><b>${s.yes}</b></span><span class="stat"><span class="dim">Slacking −0.5</span><b>${s.partly}</b></span>
+    <span class="stat"><span class="dim">Absent −1</span><b>${s.no}</b></span><span class="stat"><span class="dim">Excused 0</span><b>${s.exc}</b></span></div>
+  <div class="card">${rows.map(({ e, u, r }) => `<div class="mrow"><div><b>${esc(e.name)}${u.name ? " · " + esc(u.name) : ""}</b><div class="dim">${esc(e.date)}${r.reason ? ` · “${esc(r.reason)}”` : ""}</div></div><span style="color:#fff;border-radius:6px;padding:4px 8px;background:${col[r.v]}">${RES[r.v].short} ${RES[r.v].label}</span></div>`).join("") || `<div class="dim">No events marked yet.</div>`}</div>`;
+}
+
+function render() {
+  const f = document.activeElement, fid = f?.id, pos = f?.selectionStart;
+  if (S.phase !== "ready") { $("app").innerHTML = gateScreen(); return; }
+  if (!staffView() && !["mine", "ranking"].includes(S.tab)) S.tab = "mine";
+  if (staffView() && S.tab === "mine" && (!byId(myMid()) || isFaculty())) S.tab = "overview";
+  let body;
+  if (S.tab === "overview") body = overviewScreen();
+  else if (S.tab === "events") body = S.ev ? markScreen() : eventsScreen();
+  else if (S.tab === "ranking") body = rankingScreen();
+  else if (S.tab === "summary") body = summaryScreen();
+  else if (S.tab === "members") body = membersScreen();
+  else if (S.tab === "log") body = logScreen();
+  else body = mineScreen();
+  $("app").innerHTML = layout(body);
+  if (fid === "q" && $("q")) { $("q").focus(); if (pos != null) $("q").setSelectionRange(pos, pos); }
+}
+
+// ---------------------------------------------------------------- writes
+async function run(fn) { try { await fn(); } catch (e) { toast(friendly(e)); } }
+
+async function setMark(e, unitId, mid, v, reason) {
+  if (mid === myMid()) return toast("You can't mark yourself.");
+  const prev = markOf(unitId, mid);
+  if (prev && prev.v === v && (prev.reason || "") === (reason || "")) return;
+  if (!D.sheets[unitId]) { await setDoc(doc(db, "sheets", unitId), { eid: e.id, marks: {} }); D.sheets[unitId] = { eid: e.id, marks: {} }; }
+  await updateDoc(doc(db, "sheets", unitId), { [`marks.${mid}`]: { v, reason: reason || "", by: S.email, byName: viewerName(), at: serverTimestamp() }, last: mid });
+  const sub = (e.subs || []).find((x) => x.id === unitId);
+  await addLog({ eid: e.id, evName: e.name, sub: sub ? sub.id : "", subName: sub ? sub.name : "", mid, midName: byId(mid)?.name || "", from: prev ? prev.v : null, to: v, reason: reason || "" }).catch(() => undefined);
+  S.log = null;
+}
+
+// Writes a member and keeps their sign-in (access) record in step.
+function writeMember(b, m, old) {
+  const { id, ...data } = m;
+  b.set(doc(db, "members", id), data);
+  if (old?.email && old.email !== m.email) b.delete(doc(db, "access", old.email));
+  if (m.email) b.set(doc(db, "access", m.email), { mid: id, role: m.role });
+}
+
+const A = {
+  signin: () => signIn(),
+  signout: () => { stopAll(); fbSignOut(auth); },
+  reload: () => location.reload(),
+  tab: (d) => { S.tab = d.k; S.ev = ""; S.q = ""; S.batch = "all"; render(); },
+  batch: (d) => { S.batch = d.k; render(); },
+  preview: (d) => { S.viewAs = d.m; S.tab = "mine"; render(); },
+  stopPreview: () => { S.viewAs = ""; S.tab = "members"; render(); },
+  seed: () => run(async () => {
+    if (D.members.length) return;
+    const b = writeBatch(db);
+    for (const [batch, names] of Object.entries(ROSTER)) for (const name of names) {
+      const role = batch === "Faculty" ? "faculty" : START_POCS.includes(name) ? "poc" : "member";
+      writeMember(b, { id: rnd("m"), name, batch, email: KNOWN_EMAILS[name] || "", role }, null);
+    }
+    b.set(doc(db, "config", "settings"), { yellowAt: 3, redAt: 4 });
+    await b.commit();
+    await addLog({ note: "Loaded the starting member list (62 people)" });
+    location.reload();
+  }),
+  newEvent: () => run(async () => {
+    const name = $("ev-name").value.trim();
+    const batches = [...document.querySelectorAll('input[name="evb"]:checked')].map((x) => x.value);
+    if (!name) return toast("Give the event a name.");
+    if (!batches.length) return toast("Tick at least one batch.");
+    const id = rnd("e"), b = writeBatch(db);
+    b.set(doc(db, "events", id), { name, date: $("ev-date").value, batches, subs: [], by: S.email, at: serverTimestamp() });
+    b.set(doc(db, "sheets", id), { eid: id, marks: {} });
+    await b.commit();
+    await addLog({ note: `Created event "${name}" (${batches.join(", ")})` });
+  }),
+  delEvent: (d) => run(async () => {
+    const e = D.events.find((x) => x.id === d.id);
+    if (!confirm(`Delete "${e.name}"? Its marks are removed from everyone's points. History keeps the record.`)) return;
+    const b = writeBatch(db);
+    b.delete(doc(db, "events", e.id));
+    for (const id of new Set([e.id, ...(e.subs || []).map((x) => x.id)])) b.delete(doc(db, "sheets", id));
+    await b.commit();
+    await addLog({ note: `Deleted event "${e.name}"` });
+  }),
+  open: (d) => { S.ev = d.id; S.sub = ""; S.q = ""; S.batch = "all"; render(); },
+  back: () => { S.ev = ""; render(); },
+  pickSub: (d) => { S.sub = d.id; render(); },
+  subsToggle: () => { S.subsOpen = !S.subsOpen; },
+  addSub: () => run(async () => {
+    const e = D.events.find((x) => x.id === S.ev); const name = $("sub-name").value.trim();
+    if (!name) return toast("Give the sub-event a name.");
+    const subs = [...(e.subs || [])];
+    // First sub-event on an event that already has marks: keep them as a "Main" sub-event.
+    if (!subs.length && Object.keys(D.sheets[e.id]?.marks || {}).length) subs.push({ id: e.id, name: "Main" });
+    const id = rnd("s"); subs.push({ id, name });
+    const b = writeBatch(db);
+    b.set(doc(db, "sheets", id), { eid: e.id, marks: {} });
+    b.update(doc(db, "events", e.id), { subs });
+    await b.commit();
+    S.sub = id; S.subsOpen = true;
+    await addLog({ note: `Added sub-event "${name}" to "${e.name}"` });
+  }),
+  delSub: (d) => run(async () => {
+    const e = D.events.find((x) => x.id === S.ev); const x = e.subs.find((y) => y.id === d.id);
+    const n = Object.keys(D.sheets[d.id]?.marks || {}).length;
+    if (!confirm(`Delete sub-event "${x.name}"?${n ? ` Its ${n} marks will be removed from points (History keeps them).` : ""}`)) return;
+    const b = writeBatch(db);
+    b.update(doc(db, "events", e.id), { subs: e.subs.filter((y) => y.id !== d.id) });
+    b.delete(doc(db, "sheets", d.id));
+    await b.commit(); S.sub = "";
+    await addLog({ note: `Deleted sub-event "${x.name}" from "${e.name}"` });
+  }),
+  mark: (d) => run(async () => {
+    const e = D.events.find((x) => x.id === S.ev); let reason = "";
+    if (RES[d.v].reason) {
+      reason = prompt(`Reason for ${RES[d.v].short} ${RES[d.v].label} — ${byId(d.m).name}:`, "");
+      if (reason === null) return;
+      reason = reason.trim();
+      if (!reason) return toast("Please write a reason for " + RES[d.v].label + ".");
+    }
+    await setMark(e, curUnit(e).id, d.m, d.v, reason);
+  }),
+  allYes: (d) => run(async () => {
+    const e = D.events.find((x) => x.id === d.id), uId = curUnit(e).id, q = S.q.toLowerCase();
+    const todo = membersOf(e).filter((m) => (S.batch === "all" || m.batch === S.batch) && (!q || m.name.toLowerCase().includes(q)) && m.id !== myMid() && !markOf(uId, m.id));
+    if (!todo.length) return toast("Everyone shown is already marked.");
+    if (!confirm(`Mark +1 for ${todo.length} unmarked people?`)) return;
+    for (const m of todo) await setMark(e, uId, m.id, "yes", "");
+  }),
+  setFlag: () => run(async () => {
+    const y = parseInt($("yellowAt").value, 10), r = parseInt($("redAt").value, 10);
+    if (!(y >= 1 && r > y)) return toast("Red must be bigger than yellow, and both must be 1 or more.");
+    await setDoc(doc(db, "config", "settings"), { yellowAt: y, redAt: r });
+    await addLog({ note: `Set flags: yellow at ${y}, red at ${r} absences in a row` });
+  }),
+  csv: () => {
+    const cell = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const evs = [...D.events].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    const lines = [["Name", "Batch", "Email", "Points", "+1", "-0.5", "-1", "Excused", "Events", "Absent events", "Absent in a row", "Flag", ...evs.flatMap((e) => units(e).map((u) => e.name + (u.name ? " - " + u.name : "") + " " + e.date))].map(cell).join(",")];
+    for (const m of participants()) { const s = stats(m.id); lines.push([m.name, m.batch, m.email, s.points, s.yes, s.partly, s.no, s.exc, s.events, s.absEv, s.streak, s.level, ...evs.flatMap((e) => units(e).map((u) => { const r = markOf(u.id, m.id); return r ? RES[r.v].score : ""; }))].map(cell).join(",")); }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+    a.download = `samatvam-participation-${new Date().toISOString().slice(0, 10)}.csv`; document.body.appendChild(a); a.click(); a.remove();
+  },
+  addMember: () => run(async () => {
+    const name = $("nm-name").value.trim(), email = $("nm-email").value.trim().toLowerCase(), batch = $("nm-batch").value;
+    if (!name) return toast("Enter a name.");
+    if (email && !okEmail(email)) return toast("That email doesn't look right.");
+    if (email && D.members.some((m) => m.email === email)) return toast("Someone already has this email.");
+    const b = writeBatch(db);
+    writeMember(b, { id: rnd("m"), name, batch, email, role: batch === "Faculty" ? "faculty" : $("nm-role").value }, null);
+    await b.commit();
+    await addLog({ note: `Added ${name} (${batch})` });
+  }),
+  delMember: (d) => run(async () => {
+    const m = byId(d.m); if (!confirm(`Remove ${m.name}? Their marks stay in History.`)) return;
+    const b = writeBatch(db); b.delete(doc(db, "members", m.id)); if (m.email) b.delete(doc(db, "access", m.email));
+    await b.commit(); await addLog({ note: `Removed ${m.name}` });
+  }),
+  reloadLog: () => { S.log = null; render(); },
+};
+
+async function editMember(t) {
+  const m = byId(t.dataset.m); if (!m) return;
+  const f = t.dataset.f; let v = t.value.trim();
+  const next = { ...m };
+  if (f === "name") { if (!v) { t.value = m.name; return; } next.name = v; }
+  if (f === "batch") { next.batch = v; if (v === "Faculty") next.role = "faculty"; }
+  if (f === "role") next.role = v;
+  if (f === "email") {
+    v = v.toLowerCase();
+    if (v && !okEmail(v)) { toast("That email doesn't look right."); t.value = m.email || ""; return; }
+    if (v && D.members.some((x) => x.id !== m.id && x.email === v)) { toast("Someone else already has this email."); t.value = m.email || ""; return; }
+    next.email = v;
+  }
+  await run(async () => {
+    const b = writeBatch(db); writeMember(b, next, m); await b.commit();
+    await addLog({ note: `Changed ${f} of ${m.name}: “${m[f] || ""}” → “${next[f] || ""}”` });
+  });
+}
+async function renameSub(t) {
+  const e = D.events.find((x) => x.id === S.ev); const x = e?.subs.find((y) => y.id === t.dataset.sub);
+  const v = t.value.trim(); if (!x) return; if (!v) { t.value = x.name; return; }
+  await run(async () => {
+    await updateDoc(doc(db, "events", e.id), { subs: e.subs.map((y) => (y.id === x.id ? { ...y, name: v } : y)) });
+    await addLog({ note: `Renamed sub-event "${x.name}" to "${v}" in "${e.name}"` });
+  });
+}
+
+document.addEventListener("click", (e) => { const el = e.target.closest("[data-a]"); if (el && A[el.dataset.a]) A[el.dataset.a](el.dataset); });
+document.addEventListener("input", (e) => { if (e.target.id === "q") { S.q = e.target.value; render(); } });
+document.addEventListener("change", (e) => { if (e.target.dataset.sub) renameSub(e.target); else if (e.target.dataset.f) editMember(e.target); });
+</script>
+</body>
+</html>
