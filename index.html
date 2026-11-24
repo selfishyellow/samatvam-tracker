@@ -77,7 +77,7 @@ const firebaseConfig = {
   appId: "1:954477611347:web:a8f2f0aee306e9411ef9a6",
 };
 const FIRST_ADMIN = "neham.r2028@iimbg.ac.in";
-const VERSION = "v8 · 24 Nov"; // shown on the sign-in screens, so a screenshot tells us which copy of the page someone has
+const VERSION = "v9 · 24 Nov"; // shown on the sign-in screens, so a screenshot tells us which copy of the page someone has
 
 const PART = ["MBA 11", "MBA 12", "IPM 05", "IPM 06"];
 const BATCHES = [...PART, "Faculty"];
@@ -289,10 +289,9 @@ function layout(body) {
   const v = viewer();
   const roleName = S.viewAs ? "Preview" : ROLES[S.acc?.role] || "PoC";
   let tabs;
-  if (staffView()) {
-    tabs = [["overview", "Overview"], ["events", "Mark attendance"], ["ranking", "Ranking"], ["summary", "Everyone"], ["members", "Members"], ["log", "History"]];
-    if (byId(myMid()) && !isFaculty()) tabs.push(["mine", "My record"]);
-  } else tabs = [["mine", "My record"], ["ranking", "Ranking"]];
+  // Everyone can see every page. Only PoCs and faculty get the buttons that change things.
+  tabs = [["overview", "Overview"], ["events", staffView() ? "Mark attendance" : "Events"], ["ranking", "Ranking"], ["summary", "Everyone"], ["members", "Members"], ["log", "History"]];
+  if (viewer() && !(staffView() && isFaculty())) tabs.push(["mine", "My record"]);
   return `<header><b>Samatvam · Participation</b><span>${esc(v?.name || S.myName)} <span class="pill">${roleName}</span></span><button data-a="signout">Sign out</button></header>
   ${S.viewAs ? `<div style="background:#fff4d6;padding:8px 14px" class="row"><b>Preview:</b> this is what ${esc(v?.name)} sees. <button data-a="stopPreview">Stop preview</button></div>` : ""}
   <main>${staffView() && D.requests.length && S.tab !== "members" ? `<div class="card warn row" style="justify-content:space-between"><b>🔔 ${D.requests.length} ${D.requests.length === 1 ? "person is" : "people are"} waiting for approval</b><button class="main" data-a="tab" data-k="members">Review</button></div>` : ""}<nav>${tabs.map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" data-a="tab" data-k="${k}">${l}</button>`).join("")}</nav>${body}</main>`;
@@ -304,7 +303,7 @@ function overviewScreen() {
   const red = all.filter((x) => x.s.level === "red"), yel = all.filter((x) => x.s.level === "yellow");
   return `${red.length ? `<div class="card bad"><b>🔴 Red flag (${red.length})</b> · absent in ${D.settings.redAt}+ events in a row: ${red.map((x) => esc(x.m.name)).join(", ")}</div>` : ""}
   ${yel.length ? `<div class="card warn"><b>🟡 Warning (${yel.length})</b> · absent in ${D.settings.yellowAt} events in a row: ${yel.map((x) => esc(x.m.name)).join(", ")}</div>` : ""}
-  <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Most absences · top 5</h2><button class="main" data-a="tab" data-k="events">Mark attendance →</button></div>
+  <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Most absences · top 5</h2>${staffView() ? `<button class="main" data-a="tab" data-k="events">Mark attendance →</button>` : `<button data-a="tab" data-k="events">See events →</button>`}</div>
     <div class="dim" style="margin:4px 0 8px">${D.events.length} events so far · ${participants().length} members</div>
     ${top.length ? `<div class="scroll"><table><tr><th>#</th><th>Name</th><th>Batch</th><th>Absent</th><th>In a row now</th><th>Excused</th><th>Points</th></tr>
     ${top.map(({ m, s }, i) => `<tr><td>${i + 1}</td><td><b>${esc(m.name)}</b></td><td>${m.batch}</td><td><b style="font-size:18px">${s.absEv}</b> of ${s.events} events</td><td>${s.streak} ${flagTag(s)}</td><td>${s.exc}</td><td>${pts(s.points)}</td></tr>`).join("")}</table></div>`
@@ -334,16 +333,16 @@ function rankingScreen() {
 
 function eventsScreen() {
   const list = [...D.events].sort((a, b) => (b.date || "").localeCompare(a.date || "") || ms(b.at) - ms(a.at));
-  return `<div class="card"><b>New event</b>
+  return `${!staffView() ? "" : `<div class="card"><b>New event</b>
     <div class="row" style="margin-top:6px"><input id="ev-name" placeholder="Event name" style="flex:1;min-width:180px"><input id="ev-date" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
     <div class="row" style="margin-top:6px"><span class="dim">Who takes part:</span>${PART.map((b) => `<label><input type="checkbox" name="evb" value="${b}" checked> ${b}</label>`).join("")}</div>
-    <div style="margin-top:8px"><button class="main" data-a="newEvent">Create event</button></div></div>
+    <div style="margin-top:8px"><button class="main" data-a="newEvent">Create event</button></div></div>`}
   ${list.length ? list.map((e) => {
     const ms_ = membersOf(e);
     const prog = units(e).map((u) => `${u.name ? esc(u.name) + ": " : ""}${ms_.filter((m) => markOf(u.id, m.id)).length} of ${ms_.length} marked`).join(" · ");
     return `<div class="card row" style="justify-content:space-between"><div><b>${esc(e.name)}</b>${e.subs?.length ? ` <span class="pill">${e.subs.length} sub-events</span>` : ""}<div class="dim">${esc(e.date)} · ${e.batches.join(", ")}</div><div class="dim">${prog}</div></div>
-      <div class="row"><button class="main" data-a="open" data-id="${e.id}">Mark</button><button data-a="delEvent" data-id="${e.id}">Delete</button></div></div>`;
-  }).join("") : `<div class="card dim">No events yet. Create the first one above.</div>`}`;
+      <div class="row"><button class="main" data-a="open" data-id="${e.id}">${staffView() ? "Mark" : "View"}</button>${staffView() ? `<button data-a="delEvent" data-id="${e.id}">Delete</button>` : ""}</div></div>`;
+  }).join("") : `<div class="card dim">No events yet.</div>`}`;
 }
 
 const curUnit = (e) => { const u = units(e); return u.find((x) => x.id === S.sub) || u[0]; };
@@ -357,20 +356,20 @@ function markScreen() {
   membersOf(e).forEach((m) => { const r = markOf(u.id, m.id); if (r) c[r.v]++; });
   return `<button data-a="back">← All events</button>
   <h2 style="margin:10px 0 2px">${esc(e.name)}</h2><div class="dim">${esc(e.date)}</div>
-  <details class="card" style="margin-top:10px" ${S.subsOpen ? "open" : ""}><summary data-a="subsToggle" style="cursor:pointer"><b>Sub-events (${subs.length})</b> <span class="dim">· add, rename or delete</span></summary>
+  ${!staffView() ? "" : `<details class="card" style="margin-top:10px" ${S.subsOpen ? "open" : ""}><summary data-a="subsToggle" style="cursor:pointer"><b>Sub-events (${subs.length})</b> <span class="dim">· add, rename or delete</span></summary>
     ${subs.map((x) => `<div class="row" style="margin-top:6px"><input value="${esc(x.name)}" data-sub="${x.id}" style="flex:1;min-width:160px"><button data-a="delSub" data-id="${x.id}">Delete</button></div>`).join("")}
     <div class="row" style="margin-top:6px"><input id="sub-name" placeholder="New sub-event, e.g. Yoga session" style="flex:1;min-width:160px"><button class="main" data-a="addSub">Add sub-event</button></div>
-    <div class="dim" style="margin-top:4px">Each sub-event is marked separately and gives its own points. For "absent in a row", the whole event counts once: anyone who came to any sub-event counts as present.</div></details>
+    <div class="dim" style="margin-top:4px">Each sub-event is marked separately and gives its own points. For "absent in a row", the whole event counts once: anyone who came to any sub-event counts as present.</div></details>`}
   ${subs.length ? `<nav>${subs.map((x) => `<button class="${x.id === u.id ? "on" : ""}" data-a="pickSub" data-id="${x.id}">${esc(x.name)}</button>`).join("")}</nav>` : ""}
   <div class="dim">${u.name ? "<b>" + esc(u.name) + "</b> · " : ""}+1: ${c.yes} · −0.5: ${c.partly} · −1: ${c.no} · Excused: ${c.exc}</div>
   <div class="card" style="margin-top:10px">
     <div class="row"><input id="q" placeholder="Search name" value="${esc(S.q)}" style="flex:1;min-width:160px">${batchButtons(e.batches)}
-      <button data-a="allYes" data-id="${e.id}">+1 for all unmarked</button></div>
+      ${staffView() ? `<button data-a="allYes" data-id="${e.id}">+1 for all unmarked</button>` : ""}</div>
     ${list.map((m) => {
       const r = markOf(u.id, m.id), self = m.id === myMid(), st = stats(m.id);
       return `<div class="mrow"><div><b>${esc(m.name)}</b> <span class="dim">${m.batch}</span> ${flagTag(st)}
           ${r ? `<div class="dim">${RES[r.v].short} ${RES[r.v].label} · by ${esc(r.byName)} · ${when(r.at)}${r.reason ? ` · “${esc(r.reason)}”` : ""}</div>` : `<div class="dim">Not marked yet</div>`}</div>
-        <div class="row">${self ? `<span class="dim">You can't mark yourself</span>` : Object.entries(RES).map(([k, x]) => `<button class="mk ${k} ${r?.v === k ? "on" : ""}" data-a="mark" data-m="${m.id}" data-v="${k}">${k === "exc" ? "Exc 0" : x.short}</button>`).join("")}</div></div>`;
+        <div class="row">${!staffView() ? "" : self ? `<span class="dim">You can't mark yourself</span>` : Object.entries(RES).map(([k, x]) => `<button class="mk ${k} ${r?.v === k ? "on" : ""}" data-a="mark" data-m="${m.id}" data-v="${k}">${k === "exc" ? "Exc 0" : x.short}</button>`).join("")}</div></div>`;
     }).join("") || `<div class="dim" style="padding:8px 0">Nobody matches.</div>`}
   </div>`;
 }
@@ -379,9 +378,9 @@ function summaryScreen() {
   const rank = { red: 2, yellow: 1, "": 0 };
   const rows = participants().map((m) => ({ m, s: stats(m.id) })).filter(({ m }) => S.batch === "all" || m.batch === S.batch)
     .sort((a, b) => (rank[b.s.level] - rank[a.s.level]) || (b.s.streak - a.s.streak) || (a.s.points - b.s.points) || a.m.name.localeCompare(b.m.name));
-  return `<div class="card"><div class="row"><b>Absent in a row:</b> 🟡 warning at <input id="yellowAt" type="number" min="1" value="${D.settings.yellowAt}" style="width:60px">
+  return `${!staffView() ? `<div class="card dim">🟡 Warning at ${D.settings.yellowAt} absences in a row · 🔴 Red flag at ${D.settings.redAt}. Excused events don't count. Coming to an event resets the count.</div>` : `<div class="card"><div class="row"><b>Absent in a row:</b> 🟡 warning at <input id="yellowAt" type="number" min="1" value="${D.settings.yellowAt}" style="width:60px">
       🔴 red flag at <input id="redAt" type="number" min="1" value="${D.settings.redAt}" style="width:60px"> <button data-a="setFlag">Save</button></div>
-    <div class="dim" style="margin-top:4px">Excused events don't count either way. Coming to an event (+1 or −0.5) resets the count.</div></div>
+    <div class="dim" style="margin-top:4px">Excused events don't count either way. Coming to an event (+1 or −0.5) resets the count.</div></div>`}
   <div class="card"><div class="row" style="margin-bottom:8px">${batchButtons(PART)}<button data-a="csv" style="margin-left:auto">Download CSV</button></div>
   <div class="scroll"><table><tr><th>Name</th><th>Batch</th><th>Points</th><th>+1</th><th>−0.5</th><th>−1</th><th>Exc</th><th>Events</th><th>Absent events</th><th>Longest run</th></tr>
   ${rows.map(({ m, s }) => `<tr><td>${esc(m.name)} ${flagTag(s)}</td><td>${m.batch}</td><td><b>${pts(s.points)}</b></td><td>${s.yes}</td><td>${s.partly}</td><td>${s.no}</td><td>${s.exc}</td><td>${s.events}</td><td>${s.absEv}</td><td>${s.longest}</td></tr>`).join("")}
@@ -389,6 +388,14 @@ function summaryScreen() {
 }
 
 function membersScreen() {
+  // View-only list for everyone who isn't a PoC or faculty: no emails, no buttons.
+  if (!staffView()) {
+    const list = D.members.filter((m) => S.batch === "all" || m.batch === S.batch).sort((a, b) => BATCHES.indexOf(a.batch) - BATCHES.indexOf(b.batch) || a.name.localeCompare(b.name));
+    return `<div class="card"><div class="row" style="margin-bottom:8px">${batchButtons(BATCHES)}</div>
+    <div class="scroll"><table><tr><th>Name</th><th>Batch</th><th>Role</th></tr>
+    ${list.map((m) => `<tr><td>${esc(m.name)}</td><td>${m.batch}</td><td>${m.role === "member" ? "" : `<span class="pill">${ROLES[m.role]}</span>`}</td></tr>`).join("")}
+    </table></div><div class="dim" style="margin-top:6px">Only PoCs and faculty can change this list.</div></div>`;
+  }
   if (!D.members.length) return `<div class="card"><h3 style="margin-top:0">Set up the member list</h3><div class="dim">Paste one person per line: <b>Name, Batch, Role, Email</b>. Batch is MBA 11, MBA 12, IPM 05, IPM 06 or Faculty. Role is member, poc or faculty. Email is optional.</div>
     <textarea id="seed-text" rows="12" style="width:100%;margin-top:8px;font:13px monospace" placeholder="Neham Raj, MBA 12, poc, neham.r2028@iimbg.ac.in&#10;Riya, MBA 12, member"></textarea>
     <div style="margin-top:8px"><button class="main" data-a="seed">Load the member list</button></div></div>`;
@@ -449,7 +456,7 @@ function mineScreen() {
 function render() {
   const f = document.activeElement, fid = f?.id, pos = f?.selectionStart;
   if (S.phase !== "ready") { $("app").innerHTML = gateScreen(); return; }
-  if (!staffView() && !["mine", "ranking"].includes(S.tab)) S.tab = "mine";
+  if (!viewer() && S.tab === "mine") S.tab = "overview";
   if (staffView() && S.tab === "mine" && (!byId(myMid()) || isFaculty())) S.tab = "overview";
   let body;
   if (S.tab === "overview") body = overviewScreen();
