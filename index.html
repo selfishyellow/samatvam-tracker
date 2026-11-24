@@ -53,6 +53,16 @@ tr.me td{background:var(--yellow);font-weight:700}
 .mrow{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:10px 0;border-bottom:2px solid #e6e3da}
 .mrow:last-child{border-bottom:0}
 details.card summary{list-style:none}
+.modal{position:fixed;inset:0;background:rgba(17,17,17,.4);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal .card{max-width:440px;width:100%;margin:0}
+button.danger{background:var(--red);color:#fff}
+/* Sub-events drawn as branches of the big event */
+.tree{margin:12px 0 0 12px}
+.branch{position:relative;display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 0 6px 26px}
+.branch::before{content:"";position:absolute;left:0;top:50%;width:18px;border-top:3px solid var(--ink)}
+.branch::after{content:"";position:absolute;left:0;top:0;bottom:0;border-left:3px solid var(--ink)}
+.branch:last-child::after{bottom:50%}
+.branch .name{font-weight:700}
 .gate{max-width:480px;margin:70px auto;text-align:center;padding:28px}
 .gate h2{font-size:30px}
 .gate button.main{font-size:16px;padding:11px 22px;background:var(--yellow);color:var(--ink);box-shadow:var(--shadow)}
@@ -77,7 +87,7 @@ const firebaseConfig = {
   appId: "1:954477611347:web:a8f2f0aee306e9411ef9a6",
 };
 const FIRST_ADMIN = "neham.r2028@iimbg.ac.in";
-const VERSION = "v9 · 24 Nov"; // shown on the sign-in screens, so a screenshot tells us which copy of the page someone has
+const VERSION = "v10 · 24 Nov"; // shown on the sign-in screens, so a screenshot tells us which copy of the page someone has
 
 const PART = ["MBA 11", "MBA 12", "IPM 05", "IPM 06"];
 const BATCHES = [...PART, "Faculty"];
@@ -145,7 +155,28 @@ function friendly(e) {
   if (c === "auth/unauthorized-domain") return "This website address isn't allowed for Google sign-in yet (Firebase → Authentication → Settings → Authorized domains).";
   return e?.message || String(e);
 }
-function toast(msg) { alert(msg); }
+// In-page pop-ups. The browser's own alert/confirm/prompt boxes are silently blocked in some apps,
+// which made buttons like Delete look broken.
+function dialog(msg, { input = false, ok = "OK", cancel = "Cancel", danger = false } = {}) {
+  return new Promise((res) => {
+    const w = document.createElement("div"); w.className = "modal";
+    w.innerHTML = `<div class="card"><div style="white-space:pre-wrap">${esc(msg)}</div>${input ? `<input class="dlg-in" style="width:100%;margin-top:10px" placeholder="Type the reason">` : ""}
+      <div class="row" style="justify-content:flex-end;margin-top:14px">${cancel ? `<button data-d="0">${cancel}</button>` : ""}<button class="main ${danger ? "danger" : ""}" data-d="1">${ok}</button></div></div>`;
+    const no = input ? null : false;
+    const done = (v) => { w.remove(); res(v); };
+    w.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const b = ev.target.closest("[data-d]");
+      if (b) done(b.dataset.d === "1" ? (input ? w.querySelector(".dlg-in").value : true) : no);
+      else if (ev.target === w && cancel) done(no);
+    });
+    w.addEventListener("keydown", (ev) => { if (ev.key === "Enter") w.querySelector('[data-d="1"]').click(); if (ev.key === "Escape" && cancel) done(no); });
+    document.body.appendChild(w);
+    (w.querySelector(".dlg-in") || w.querySelector('[data-d="1"]')).focus();
+  });
+}
+const ask = (msg, ok = "Delete") => dialog(msg, { ok, danger: ok === "Delete" || ok === "Remove" });
+function toast(msg) { dialog(msg, { cancel: "" }); }
 
 const configured = !Object.values(firebaseConfig).some((v) => String(v).includes("PASTE"));
 const fb = configured ? initializeApp(firebaseConfig) : null;
@@ -222,15 +253,36 @@ async function tryClaim() {
     // Students: try "first.s" (name + surname letter), then "first." (listed by first name only).
     let h = await getDoc(doc(db, "handles", p.handle));
     if ((!h.exists() || !h.data().mid) && p.student) h = await getDoc(doc(db, "handles", p.first + "."));
-    if (!h.exists() || !h.data().mid) return false;
-    const { mid, role } = h.data();
-    const b = writeBatch(db);
-    b.set(doc(db, "access", S.email), { mid, role, self: true });
-    b.update(doc(db, "members", mid), { email: S.email });
-    await b.commit();
-    await deleteDoc(doc(db, "requests", S.email)).catch(() => undefined); // clear an old request, if any
-    return true;
-  } catch (e) { console.warn("Automatic match failed", e); return false; }
+    if (h.exists() && h.data().mid) return await claim(h.data().mid, h.data().role, false);
+  } catch (e) { console.warn("Exact match failed", e); }
+  if (p.student) try { return await closeMatch(p); } catch (e) { console.warn("Close match failed", e); }
+  return false;
+}
+async function claim(mid, role, close) {
+  const b = writeBatch(db);
+  b.set(doc(db, "access", S.email), close ? { mid, role, self: true, close: true } : { mid, role, self: true });
+  b.update(doc(db, "members", mid), { email: S.email });
+  await b.commit();
+  await deleteDoc(doc(db, "requests", S.email)).catch(() => undefined); // clear an old request, if any
+  return true;
+}
+// Spelling a little different (sreyansh.d → Shreyansh D…): same surname letter, first name up to
+// 1–2 letters off (or the Google account name matches), and only ONE person on the list is that close.
+// Works for ordinary members; PoCs and faculty still go to approval.
+async function closeMatch(p) {
+  const g = nameParts(S.myName)[0] || "";
+  const c = [];
+  (await getDocs(collection(db, "handles"))).forEach((d) => {
+    const { mid, role } = d.data();
+    if (!mid || role !== "member") return;
+    const [first, ini = ""] = d.id.split(".");
+    if (!first || (ini && ini !== p.initial)) return;
+    const dist = Math.min(lev(p.first, first), g ? lev(g, first) : 99);
+    if (dist <= (ini && first.length >= 5 ? 2 : 1)) c.push({ mid, role, dist });
+  });
+  c.sort((a, b) => a.dist - b.dist);
+  if (!c.length || (c[1] && c[1].dist === c[0].dist)) return false;
+  return claim(c[0].mid, c[0].role, true);
 }
 async function askToJoin() {
   try { await setDoc(doc(db, "requests", S.email), { email: S.email, gname: S.myName, at: serverTimestamp() }); S.requested = true; }
@@ -338,10 +390,14 @@ function eventsScreen() {
     <div class="row" style="margin-top:6px"><span class="dim">Who takes part:</span>${PART.map((b) => `<label><input type="checkbox" name="evb" value="${b}" checked> ${b}</label>`).join("")}</div>
     <div style="margin-top:8px"><button class="main" data-a="newEvent">Create event</button></div></div>`}
   ${list.length ? list.map((e) => {
-    const ms_ = membersOf(e);
-    const prog = units(e).map((u) => `${u.name ? esc(u.name) + ": " : ""}${ms_.filter((m) => markOf(u.id, m.id)).length} of ${ms_.length} marked`).join(" · ");
-    return `<div class="card row" style="justify-content:space-between"><div><b>${esc(e.name)}</b>${e.subs?.length ? ` <span class="pill">${e.subs.length} sub-events</span>` : ""}<div class="dim">${esc(e.date)} · ${e.batches.join(", ")}</div><div class="dim">${prog}</div></div>
-      <div class="row"><button class="main" data-a="open" data-id="${e.id}">${staffView() ? "Mark" : "View"}</button>${staffView() ? `<button data-a="delEvent" data-id="${e.id}">Delete</button>` : ""}</div></div>`;
+    const ms_ = membersOf(e), subs = e.subs || [];
+    const done = (id) => `${ms_.filter((m) => markOf(id, m.id)).length} of ${ms_.length} marked`;
+    const verb = staffView() ? "Mark" : "View";
+    return `<div class="card"><div class="row" style="justify-content:space-between"><div><b>${esc(e.name)}</b>${subs.length ? ` <span class="pill">${subs.length} sub-event${subs.length === 1 ? "" : "s"}</span>` : ""}<div class="dim">${esc(e.date)} · ${e.batches.join(", ")}</div>${subs.length ? "" : `<div class="dim">${done(e.id)}</div>`}</div>
+      <div class="row">${subs.length ? "" : `<button class="main" data-a="open" data-id="${e.id}">${verb}</button>`}${staffView() ? `<button data-a="delEvent" data-id="${e.id}">Delete</button>` : ""}</div></div>
+      ${subs.length || staffView() ? `<div class="tree">${subs.map((x) => `<div class="branch"><span class="name">${esc(x.name)}</span><span class="dim">${done(x.id)}</span><button class="main" data-a="openSub" data-e="${e.id}" data-id="${x.id}">${verb}</button></div>`).join("")}
+        ${staffView() ? `<div class="branch"><input id="sub-${e.id}" placeholder="${subs.length ? "Add another sub-event" : "Add a sub-event, e.g. Yoga session"}" style="flex:1;min-width:160px"><button data-a="addSub" data-e="${e.id}">+ Add</button></div>` : ""}</div>` : ""}
+    </div>`;
   }).join("") : `<div class="card dim">No events yet.</div>`}`;
 }
 
@@ -356,11 +412,11 @@ function markScreen() {
   membersOf(e).forEach((m) => { const r = markOf(u.id, m.id); if (r) c[r.v]++; });
   return `<button data-a="back">← All events</button>
   <h2 style="margin:10px 0 2px">${esc(e.name)}</h2><div class="dim">${esc(e.date)}</div>
-  ${!staffView() ? "" : `<details class="card" style="margin-top:10px" ${S.subsOpen ? "open" : ""}><summary data-a="subsToggle" style="cursor:pointer"><b>Sub-events (${subs.length})</b> <span class="dim">· add, rename or delete</span></summary>
+  ${!staffView() ? "" : `<details class="card" style="margin-top:10px" ${S.subsOpen ? "open" : ""}><summary data-a="subsToggle" style="cursor:pointer"><b>✎ Edit sub-events (${subs.length})</b> <span class="dim">· add, rename or delete</span></summary>
     ${subs.map((x) => `<div class="row" style="margin-top:6px"><input value="${esc(x.name)}" data-sub="${x.id}" style="flex:1;min-width:160px"><button data-a="delSub" data-id="${x.id}">Delete</button></div>`).join("")}
     <div class="row" style="margin-top:6px"><input id="sub-name" placeholder="New sub-event, e.g. Yoga session" style="flex:1;min-width:160px"><button class="main" data-a="addSub">Add sub-event</button></div>
     <div class="dim" style="margin-top:4px">Each sub-event is marked separately and gives its own points. For "absent in a row", the whole event counts once: anyone who came to any sub-event counts as present.</div></details>`}
-  ${subs.length ? `<nav>${subs.map((x) => `<button class="${x.id === u.id ? "on" : ""}" data-a="pickSub" data-id="${x.id}">${esc(x.name)}</button>`).join("")}</nav>` : ""}
+  ${subs.length ? `<div class="card"><b>Sub-events</b> <span class="dim">· pick one to ${staffView() ? "mark" : "see"}</span><div class="tree">${subs.map((x) => `<div class="branch"><button class="${x.id === u.id ? "on" : ""}" data-a="pickSub" data-id="${x.id}">${esc(x.name)}</button><span class="dim">${membersOf(e).filter((m) => markOf(x.id, m.id)).length} of ${membersOf(e).length} marked</span></div>`).join("")}</div></div>` : ""}
   <div class="dim">${u.name ? "<b>" + esc(u.name) + "</b> · " : ""}+1: ${c.yes} · −0.5: ${c.partly} · −1: ${c.no} · Excused: ${c.exc}</div>
   <div class="card" style="margin-top:10px">
     <div class="row"><input id="q" placeholder="Search name" value="${esc(S.q)}" style="flex:1;min-width:160px">${batchButtons(e.batches)}
@@ -553,7 +609,7 @@ const A = {
   }),
   delEvent: (d) => run(async () => {
     const e = D.events.find((x) => x.id === d.id);
-    if (!confirm(`Delete "${e.name}"? Its marks are removed from everyone's points. History keeps the record.`)) return;
+    if (!(await ask(`Delete "${e.name}"${e.subs?.length ? ` and its ${e.subs.length} sub-events` : ""}? Its marks are removed from everyone's points. History keeps the record.`))) return;
     const b = writeBatch(db);
     b.delete(doc(db, "events", e.id));
     for (const id of new Set([e.id, ...(e.subs || []).map((x) => x.id)])) b.delete(doc(db, "sheets", id));
@@ -563,9 +619,10 @@ const A = {
   open: (d) => { S.ev = d.id; S.sub = ""; S.q = ""; S.batch = "all"; render(); },
   back: () => { S.ev = ""; render(); },
   pickSub: (d) => { S.sub = d.id; render(); },
+  openSub: (d) => { S.ev = d.e; S.sub = d.id; S.q = ""; S.batch = "all"; render(); },
   subsToggle: () => { S.subsOpen = !S.subsOpen; },
-  addSub: () => run(async () => {
-    const e = D.events.find((x) => x.id === S.ev); const name = $("sub-name").value.trim();
+  addSub: (d) => run(async () => {
+    const e = D.events.find((x) => x.id === (d.e || S.ev)); const box = $(d.e ? "sub-" + d.e : "sub-name"); const name = box.value.trim();
     if (!name) return toast("Give the sub-event a name.");
     const subs = [...(e.subs || [])];
     // First sub-event on an event that already has marks: keep them as a "Main" sub-event.
@@ -575,13 +632,13 @@ const A = {
     b.set(doc(db, "sheets", id), { eid: e.id, marks: {} });
     b.update(doc(db, "events", e.id), { subs });
     await b.commit();
-    S.sub = id; S.subsOpen = true;
+    if (S.ev) { S.sub = id; S.subsOpen = true; }
     await addLog({ note: `Added sub-event "${name}" to "${e.name}"` });
   }),
   delSub: (d) => run(async () => {
     const e = D.events.find((x) => x.id === S.ev); const x = e.subs.find((y) => y.id === d.id);
     const n = Object.keys(D.sheets[d.id]?.marks || {}).length;
-    if (!confirm(`Delete sub-event "${x.name}"?${n ? ` Its ${n} marks will be removed from points (History keeps them).` : ""}`)) return;
+    if (!(await ask(`Delete sub-event "${x.name}"?${n ? ` Its ${n} marks will be removed from points (History keeps them).` : ""}`))) return;
     const b = writeBatch(db);
     b.update(doc(db, "events", e.id), { subs: e.subs.filter((y) => y.id !== d.id) });
     b.delete(doc(db, "sheets", d.id));
@@ -591,7 +648,7 @@ const A = {
   mark: (d) => run(async () => {
     const e = D.events.find((x) => x.id === S.ev); let reason = "";
     if (RES[d.v].reason) {
-      reason = prompt(`Reason for ${RES[d.v].short} ${RES[d.v].label} — ${byId(d.m).name}:`, "");
+      reason = await dialog(`Reason for ${RES[d.v].short} ${RES[d.v].label} — ${byId(d.m).name}:`, { input: true, ok: "Save" });
       if (reason === null) return;
       reason = reason.trim();
       if (!reason) return toast("Please write a reason for " + RES[d.v].label + ".");
@@ -602,7 +659,7 @@ const A = {
     const e = D.events.find((x) => x.id === d.id), uId = curUnit(e).id, q = S.q.toLowerCase();
     const todo = membersOf(e).filter((m) => (S.batch === "all" || m.batch === S.batch) && (!q || m.name.toLowerCase().includes(q)) && m.id !== myMid() && !markOf(uId, m.id));
     if (!todo.length) return toast("Everyone shown is already marked.");
-    if (!confirm(`Mark +1 for ${todo.length} unmarked people?`)) return;
+    if (!(await ask(`Mark +1 for ${todo.length} unmarked people?`, "Mark +1"))) return;
     for (const m of todo) await setMark(e, uId, m.id, "yes", "");
   }),
   setFlag: () => run(async () => {
@@ -630,7 +687,7 @@ const A = {
     await addLog({ note: `Added ${name} (${batch})` });
   }),
   delMember: (d) => run(async () => {
-    const m = byId(d.m); if (!confirm(`Remove ${m.name}? Their marks stay in History.`)) return;
+    const m = byId(d.m); if (!(await ask(`Remove ${m.name}? Their marks stay in History.`, "Remove"))) return;
     const b = writeBatch(db); b.delete(doc(db, "members", m.id)); if (m.email) b.delete(doc(db, "access", m.email));
     await b.commit(); await addLog({ note: `Removed ${m.name}` });
   }),
@@ -643,7 +700,7 @@ const A = {
     await b.commit(); await addLog({ note: `Approved ${r.email} as ${m.name}` });
   }),
   dismiss: (d) => run(async () => {
-    const r = D.requests[+d.i]; if (!confirm(`Remove the request from ${r.email}?`)) return;
+    const r = D.requests[+d.i]; if (!(await ask(`Remove the request from ${r.email}?`, "Remove"))) return;
     await deleteDoc(doc(db, "requests", r.email)); await addLog({ note: `Turned down sign-in request from ${r.email}` });
   }),
 };
