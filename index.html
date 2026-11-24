@@ -111,13 +111,13 @@ function parseEmail(email) {
 const nameParts = (n) => (n || "").toLowerCase().replace(/\b(dr|prof|mr|mrs|ms)\.?\s+/g, "").replace(/\b(ma'?am|sir)\b/g, "")
   .split(/\s+/).map((p) => p.replace(/[^a-z]/g, "")).filter(Boolean);
 // The email name a member should have: "chaitanya.g" for a student with a surname, "sweta" for faculty.
-// Students without a surname (e.g. "Riya") get none, so a PoC approves them by hand.
+// Students listed by first name only (e.g. "Princi") get "princi." and match on first name.
 function handleOf(m) {
   if (!m.name || /^unnamed|\(/i.test(m.name)) return "";
   const p = nameParts(m.name);
   if (!p.length) return "";
   if (m.batch === "Faculty") return p[0];
-  return p.length > 1 ? p[0] + "." + p[1][0] : "";
+  return p.length > 1 ? p[0] + "." + p[1][0] : p[0] + ".";
 }
 function lev(a, b) {
   const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
@@ -218,13 +218,16 @@ async function tryClaim() {
   const p = parseEmail(S.email);
   if (!p.college || !p.handle) return false;
   try {
-    const h = await getDoc(doc(db, "handles", p.handle));
+    // Students: try "first.s" (name + surname letter), then "first." (listed by first name only).
+    let h = await getDoc(doc(db, "handles", p.handle));
+    if ((!h.exists() || !h.data().mid) && p.student) h = await getDoc(doc(db, "handles", p.first + "."));
     if (!h.exists() || !h.data().mid) return false;
     const { mid, role } = h.data();
     const b = writeBatch(db);
     b.set(doc(db, "access", S.email), { mid, role, self: true });
     b.update(doc(db, "members", mid), { email: S.email });
     await b.commit();
+    await deleteDoc(doc(db, "requests", S.email)).catch(() => undefined); // clear an old request, if any
     return true;
   } catch (e) { console.warn("Automatic match failed", e); return false; }
 }
