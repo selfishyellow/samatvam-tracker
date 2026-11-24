@@ -77,6 +77,7 @@ const firebaseConfig = {
   appId: "1:954477611347:web:a8f2f0aee306e9411ef9a6",
 };
 const FIRST_ADMIN = "neham.r2028@iimbg.ac.in";
+const VERSION = "v8 · 24 Nov"; // shown on the sign-in screens, so a screenshot tells us which copy of the page someone has
 
 const PART = ["MBA 11", "MBA 12", "IPM 05", "IPM 06"];
 const BATCHES = [...PART, "Faculty"];
@@ -245,7 +246,7 @@ async function signIn() {
 }
 
 let scheduled = false;
-const schedule = () => { if (scheduled) return; scheduled = true; requestAnimationFrame(() => { scheduled = false; render(); }); };
+const schedule = () => { if (scheduled) return; scheduled = true; setTimeout(() => { scheduled = false; render(); }, 0); };
 function listen() {
   const wait = new Set(["members", "events", "sheets", "config"]);
   const done = (k) => { wait.delete(k); if (!wait.size) S.phase = "ready"; schedule(); };
@@ -270,7 +271,7 @@ async function addLog(entry) {
 const viewerName = () => byId(myMid())?.name || S.myName;
 
 // ---------------------------------------------------------------- screens
-function gate(inner) { return `<div class="card gate">${inner}</div>`; }
+function gate(inner) { return `<div class="card gate">${inner}<div class="dim" style="margin-top:14px;font-size:11px">${VERSION}</div></div>`; }
 function gateScreen() {
   switch (S.phase) {
     case "unconfigured": return gate(`<h2>Almost ready</h2><div class="dim">Firebase settings haven't been added to this page yet.</div>`);
@@ -278,7 +279,7 @@ function gateScreen() {
     case "signin": return gate(`<h2 style="margin-top:0">Samatvam · Participation</h2><div class="dim" style="margin-bottom:12px">IIM Bodh Gaya. Sign in with the Google account Samatvam has on file for you.</div>
       <button class="main" data-a="signin">Sign in with Google</button>
       <div class="dim" style="margin-top:12px">Opened this link inside WhatsApp or Instagram? Open it in Chrome or Safari instead. Google doesn't allow sign-in inside those apps.</div>`);
-    case "denied": return gate(`<h2 style="margin-top:0">Can't let you in</h2><div>Signed in as <b>${esc(S.email)}</b>.</div><div class="dim" style="margin:8px 0">${S.requested ? "We couldn't match this email to a name on the Samatvam list for sure, so we've sent a request to the PoCs. Once one of them approves it, come back and sign in again." : "This email isn't on the Samatvam list. Ask a PoC to add it next to your name."}</div><button data-a="signout">Use a different Google account</button>`);
+    case "denied": return gate(`<h2 style="margin-top:0">Can't let you in</h2><div>Signed in as <b>${esc(S.email)}</b>.</div><div class="dim" style="margin:8px 0">${S.requested ? "We couldn't match this email to a name on the Samatvam list for sure, so we've sent a request to the PoCs. Once one of them approves it, come back and sign in again." : "This email isn't on the Samatvam list. Ask a PoC to add it next to your name."}</div><div class="row" style="justify-content:center"><button class="main" data-a="retry">Try again</button><button data-a="signout">Use a different Google account</button></div>`);
     case "error": return gate(`<h2 style="margin-top:0">Something went wrong</h2><div class="card bad">${esc(S.reason)}</div><button class="main" data-a="reload">Try again</button> <button data-a="signout">Sign out</button>`);
   }
   return "";
@@ -512,6 +513,8 @@ const A = {
   signin: () => signIn(),
   signout: () => { stopAll(); fbSignOut(auth); },
   reload: () => location.reload(),
+  // Always fetch the newest copy of the page (phones often keep an old one), then check again.
+  retry: () => { location.href = location.pathname + "?r=" + Date.now(); },
   tab: (d) => { S.tab = d.k; S.ev = ""; S.q = ""; S.batch = "all"; render(); },
   batch: (d) => { S.batch = d.k; render(); },
   preview: (d) => { S.viewAs = d.m; S.tab = "mine"; render(); },
