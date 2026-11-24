@@ -98,6 +98,45 @@ const pts = (n) => (n > 0 ? "+" + n : n < 0 ? "−" + Math.abs(n) : "0");
 const ms = (v) => (v && typeof v.toMillis === "function" ? v.toMillis() : typeof v === "number" ? v : Date.now());
 const when = (t) => new Date(ms(t)).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 const okEmail = (e) => /^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(e);
+// ---- Who is this email? Students: first.<surname letter><year>[i]@iimbg.ac.in. Anyone else at the college: faculty.
+const STUDENT_RE = /^([a-z]+)\.([a-z])\d{4}i?$/;
+function parseEmail(email) {
+  const [local = "", domain = ""] = (email || "").toLowerCase().split("@");
+  const college = domain === "iimbg.ac.in";
+  const m = local.match(STUDENT_RE);
+  if (m) return { student: true, first: m[1], initial: m[2], handle: m[1] + "." + m[2], college };
+  const first = (local.split(/[._\-0-9]/)[0] || "").replace(/[^a-z]/g, "");
+  return { student: false, first, initial: "", handle: first, college };
+}
+const nameParts = (n) => (n || "").toLowerCase().replace(/\b(dr|prof|mr|mrs|ms)\.?\s+/g, "").replace(/\b(ma'?am|sir)\b/g, "")
+  .split(/\s+/).map((p) => p.replace(/[^a-z]/g, "")).filter(Boolean);
+// The email name a member should have: "chaitanya.g" for a student with a surname, "sweta" for faculty.
+// Students without a surname (e.g. "Riya") get none, so a PoC approves them by hand.
+function handleOf(m) {
+  if (!m.name || /^unnamed|\(/i.test(m.name)) return "";
+  const p = nameParts(m.name);
+  if (!p.length) return "";
+  if (m.batch === "Faculty") return p[0];
+  return p.length > 1 ? p[0] + "." + p[1][0] : "";
+}
+function lev(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+// Likely matches for a sign-in request, best first. Allows 1–2 letters to differ.
+function guesses(email, gname) {
+  const p = parseEmail(email), g = nameParts(gname)[0] || "";
+  return D.members.filter((m) => !m.email && (m.batch === "Faculty") === !p.student).map((m) => {
+    const parts = nameParts(m.name), first = parts[0] || "";
+    let d = Math.min(lev(p.first, first), g ? lev(g, first) : 99);
+    if (p.initial && parts[1]) d += parts[1][0] === p.initial ? -0.5 : 1;
+    return { m, d, ok: d <= (first.length >= 6 ? 2 : 1) };
+  }).filter((x) => x.ok).sort((a, b) => a.d - b.d).slice(0, 3).map((x) => x.m);
+}
+
 function friendly(e) {
   const c = e?.code || "";
   if (c.includes("permission-denied")) return "Not allowed. Your account doesn't have permission to do this.";
@@ -117,7 +156,7 @@ google.setCustomParameters({ prompt: "select_account" });
 // ---------------------------------------------------------------- state
 const S = { phase: configured ? "loading" : "unconfigured", reason: "", email: "", myName: "", acc: null,
   tab: "", ev: "", sub: "", q: "", batch: "all", subsOpen: false, viewAs: "", log: null };
-const D = { members: [], events: [], sheets: {}, settings: { yellowAt: 3, redAt: 4 } };
+const D = { members: [], events: [], sheets: {}, requests: [], settings: { yellowAt: 3, redAt: 4 } };
 let unsub = [];
 const stopAll = () => { unsub.forEach((u) => u()); unsub = []; };
 
@@ -165,10 +204,33 @@ async function checkAccess(u) {
   try {
     const a = await getDoc(doc(db, "access", S.email));
     S.acc = a.exists() ? a.data() : null;
-    if (!S.acc && S.email !== FIRST_ADMIN) { S.phase = "denied"; render(); return; }
+    if (!S.acc && S.email !== FIRST_ADMIN) {
+      if (await tryClaim()) return checkAccess(u);
+      await askToJoin(); S.phase = "denied"; render(); return;
+    }
     S.tab = isFaculty() ? "overview" : isStaff() ? "events" : "mine";
     listen();
   } catch (e) { S.phase = "error"; S.reason = friendly(e); render(); }
+}
+// A sure match (exact name, and surname letter for students) links the person straight away.
+// The database rules check the same thing, so nobody can claim someone else's name.
+async function tryClaim() {
+  const p = parseEmail(S.email);
+  if (!p.college || !p.handle) return false;
+  try {
+    const h = await getDoc(doc(db, "handles", p.handle));
+    if (!h.exists() || !h.data().mid) return false;
+    const { mid, role } = h.data();
+    const b = writeBatch(db);
+    b.set(doc(db, "access", S.email), { mid, role, self: true });
+    b.update(doc(db, "members", mid), { email: S.email });
+    await b.commit();
+    return true;
+  } catch (e) { console.warn("Automatic match failed", e); return false; }
+}
+async function askToJoin() {
+  try { await setDoc(doc(db, "requests", S.email), { email: S.email, gname: S.myName, at: serverTimestamp() }); S.requested = true; }
+  catch (e) { S.requested = false; }
 }
 async function signIn() {
   try { await signInWithPopup(auth, google); }
@@ -185,7 +247,8 @@ function listen() {
   const wait = new Set(["members", "events", "sheets", "config"]);
   const done = (k) => { wait.delete(k); if (!wait.size) S.phase = "ready"; schedule(); };
   const fail = (e) => { S.phase = "error"; S.reason = friendly(e); render(); };
-  unsub.push(onSnapshot(collection(db, "members"), (q) => { D.members = q.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => a.name.localeCompare(b.name)); done("members"); }, fail));
+  unsub.push(onSnapshot(collection(db, "members"), (q) => { D.members = q.docs.map((d) => ({ ...d.data(), id: d.id })).sort((a, b) => a.name.localeCompare(b.name)); syncHandles(); done("members"); }, fail));
+  if (isStaff()) unsub.push(onSnapshot(collection(db, "requests"), (q) => { D.requests = q.docs.map((d) => d.data({ serverTimestamps: "estimate" })); schedule(); }, () => undefined));
   unsub.push(onSnapshot(collection(db, "events"), (q) => { D.events = q.docs.map((d) => ({ ...d.data({ serverTimestamps: "estimate" }), id: d.id })); done("events"); }, fail));
   unsub.push(onSnapshot(collection(db, "sheets"), (q) => { D.sheets = Object.fromEntries(q.docs.map((d) => [d.id, d.data({ serverTimestamps: "estimate" })])); done("sheets"); }, fail));
   unsub.push(onSnapshot(doc(db, "config", "settings"), (d) => { if (d.exists()) D.settings = { yellowAt: 3, redAt: 4, ...d.data() }; done("config"); }, fail));
@@ -212,7 +275,7 @@ function gateScreen() {
     case "signin": return gate(`<h2 style="margin-top:0">Samatvam · Participation</h2><div class="dim" style="margin-bottom:12px">IIM Bodh Gaya. Sign in with the Google account Samatvam has on file for you.</div>
       <button class="main" data-a="signin">Sign in with Google</button>
       <div class="dim" style="margin-top:12px">Opened this link inside WhatsApp or Instagram? Open it in Chrome or Safari instead. Google doesn't allow sign-in inside those apps.</div>`);
-    case "denied": return gate(`<h2 style="margin-top:0">Can't let you in</h2><div>Signed in as <b>${esc(S.email)}</b>.</div><div class="dim" style="margin:8px 0">This email isn't on the Samatvam list. Ask a PoC to add it next to your name.</div><button data-a="signout">Use a different Google account</button>`);
+    case "denied": return gate(`<h2 style="margin-top:0">Can't let you in</h2><div>Signed in as <b>${esc(S.email)}</b>.</div><div class="dim" style="margin:8px 0">${S.requested ? "We couldn't match this email to a name on the Samatvam list for sure, so we've sent a request to the PoCs. Once one of them approves it, come back and sign in again." : "This email isn't on the Samatvam list. Ask a PoC to add it next to your name."}</div><button data-a="signout">Use a different Google account</button>`);
     case "error": return gate(`<h2 style="margin-top:0">Something went wrong</h2><div class="card bad">${esc(S.reason)}</div><button class="main" data-a="reload">Try again</button> <button data-a="signout">Sign out</button>`);
   }
   return "";
@@ -228,7 +291,7 @@ function layout(body) {
   } else tabs = [["mine", "My record"], ["ranking", "Ranking"]];
   return `<header><b>Samatvam · Participation</b><span>${esc(v?.name || S.myName)} <span class="pill">${roleName}</span></span><button data-a="signout">Sign out</button></header>
   ${S.viewAs ? `<div style="background:#fff4d6;padding:8px 14px" class="row"><b>Preview:</b> this is what ${esc(v?.name)} sees. <button data-a="stopPreview">Stop preview</button></div>` : ""}
-  <main><nav>${tabs.map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" data-a="tab" data-k="${k}">${l}</button>`).join("")}</nav>${body}</main>`;
+  <main>${staffView() && D.requests.length && S.tab !== "members" ? `<div class="card warn row" style="justify-content:space-between"><b>🔔 ${D.requests.length} ${D.requests.length === 1 ? "person is" : "people are"} waiting for approval</b><button class="main" data-a="tab" data-k="members">Review</button></div>` : ""}<nav>${tabs.map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" data-a="tab" data-k="${k}">${l}</button>`).join("")}</nav>${body}</main>`;
 }
 
 function overviewScreen() {
@@ -325,9 +388,15 @@ function membersScreen() {
   if (!D.members.length) return `<div class="card"><h3 style="margin-top:0">Set up the member list</h3><div class="dim">Paste one person per line: <b>Name, Batch, Role, Email</b>. Batch is MBA 11, MBA 12, IPM 05, IPM 06 or Faculty. Role is member, poc or faculty. Email is optional.</div>
     <textarea id="seed-text" rows="12" style="width:100%;margin-top:8px;font:13px monospace" placeholder="Neham Raj, MBA 12, poc, neham.r2028@iimbg.ac.in&#10;Riya, MBA 12, member"></textarea>
     <div style="margin-top:8px"><button class="main" data-a="seed">Load the member list</button></div></div>`;
+  const reqs = D.requests.length ? `<div class="card warn"><h3 style="margin-top:0">Waiting for approval (${D.requests.length})</h3>
+    <div class="dim" style="margin-bottom:8px">These people signed in but their email didn't match a name for sure. Pick who they are and approve.</div>
+    ${D.requests.map((r, i) => { const g = guesses(r.email, r.gname); const free = D.members.filter((m) => !m.email && !g.includes(m));
+      return `<div class="mrow"><div><b>${esc(r.gname)}</b><div class="dim">${esc(r.email)}</div></div>
+      <div class="row"><select id="rq-${i}"><option value="">Pick a name…</option>${g.map((m, k) => `<option value="${m.id}" ${k === 0 ? "selected" : ""}>★ ${esc(m.name)} · ${m.batch}</option>`).join("")}${free.map((m) => `<option value="${m.id}">${esc(m.name)} · ${m.batch}</option>`).join("")}</select>
+      <button class="main" data-a="approve" data-i="${i}">Approve</button><button data-a="dismiss" data-i="${i}">Not a member</button></div></div>`; }).join("")}</div>` : "";
   const list = D.members.filter((m) => S.batch === "all" || m.batch === S.batch).sort((a, b) => BATCHES.indexOf(a.batch) - BATCHES.indexOf(b.batch) || a.name.localeCompare(b.name));
   const opts = (sel, arr) => arr.map((x) => `<option value="${x}" ${sel === x ? "selected" : ""}>${ROLES[x] || x}</option>`).join("");
-  return `<div class="card"><b>Add a person</b><div class="row" style="margin-top:6px">
+  return `${reqs}<div class="card"><b>Add a person</b><div class="row" style="margin-top:6px">
     <input id="nm-name" placeholder="Name"><select id="nm-batch">${opts("MBA 12", BATCHES)}</select>
     <input id="nm-email" placeholder="email@iimbg.ac.in" style="min-width:200px"><select id="nm-role">${opts("member", Object.keys(ROLES))}</select>
     <button class="main" data-a="addMember">Add</button></div></div>
@@ -404,10 +473,34 @@ async function setMark(e, unitId, mid, v, reason) {
   S.log = null;
 }
 
+// One-time fill of the email-name lookup for members added before it existed (runs for PoCs).
+let syncing = false;
+async function syncHandles() {
+  if (syncing || !isStaff() || !D.members.some((m) => (m.handle || "") !== handleOf(m))) return;
+  syncing = true;
+  try {
+    const by = {};
+    for (const m of D.members) { const h = handleOf(m); if (h) (by[h] = by[h] || []).push(m); }
+    const b = writeBatch(db);
+    for (const m of D.members) if ((m.handle || "") !== handleOf(m)) b.update(doc(db, "members", m.id), { handle: handleOf(m) });
+    for (const [h, ms] of Object.entries(by)) b.set(doc(db, "handles", h), { mid: ms.length === 1 ? ms[0].id : "", role: ms[0].role });
+    await b.commit();
+  } catch (e) { console.warn("Could not update the email-name lookup", e); }
+  syncing = false;
+}
+
 // Writes a member and keeps their sign-in (access) record in step.
 function writeMember(b, m, old) {
   const { id, ...data } = m;
+  data.handle = handleOf(m);
   b.set(doc(db, "members", id), data);
+  const owners = (h) => D.members.filter((x) => x.id !== id && handleOf(x) === h);
+  if (data.handle) b.set(doc(db, "handles", data.handle), { mid: owners(data.handle).length ? "" : id, role: m.role });
+  if (old?.handle && old.handle !== data.handle) {
+    const rest = owners(old.handle);
+    if (!rest.length) b.delete(doc(db, "handles", old.handle));
+    else b.set(doc(db, "handles", old.handle), { mid: rest.length === 1 ? rest[0].id : "", role: rest[0].role });
+  }
   if (old?.email && old.email !== m.email) b.delete(doc(db, "access", old.email));
   if (m.email) b.set(doc(db, "access", m.email), { mid: id, role: m.role });
 }
@@ -529,6 +622,17 @@ const A = {
     await b.commit(); await addLog({ note: `Removed ${m.name}` });
   }),
   reloadLog: () => { S.log = null; render(); },
+  approve: (d) => run(async () => {
+    const r = D.requests[+d.i], mid = $("rq-" + d.i).value, m = byId(mid);
+    if (!m) return toast("Pick who this is first.");
+    if (m.email) return toast(m.name + " already has an email.");
+    const b = writeBatch(db); writeMember(b, { ...m, email: r.email }, m); b.delete(doc(db, "requests", r.email));
+    await b.commit(); await addLog({ note: `Approved ${r.email} as ${m.name}` });
+  }),
+  dismiss: (d) => run(async () => {
+    const r = D.requests[+d.i]; if (!confirm(`Remove the request from ${r.email}?`)) return;
+    await deleteDoc(doc(db, "requests", r.email)); await addLog({ note: `Turned down sign-in request from ${r.email}` });
+  }),
 };
 
 async function editMember(t) {
